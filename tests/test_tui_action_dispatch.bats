@@ -98,6 +98,25 @@ teardown() { sandbox_teardown; }
     [[ "$output" != *"[e]"* ]]
 }
 
+@test "lean (v1.1.0): status box shows a lean breakdown line in lean" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        write_state lean
+        disabled_list_set_state com.adobe.CCXProcess gui auto_blocked
+        _status_lines_for_box 60
+    "
+    [[ "$output" == *"Lean:"* && "$output" == *"bloat off"* ]]
+}
+
+@test "lean (v1.1.0): status box has NO lean breakdown line in allow" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        write_state allow
+        _status_lines_for_box 60
+    "
+    [[ "$output" != *"Lean:"* ]]
+}
+
 # === _tui_action_d — discovery ================================================
 
 @test "PD-02: _tui_action_d calls discovery_sweep + shows component count" {

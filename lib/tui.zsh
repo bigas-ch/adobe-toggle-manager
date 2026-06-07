@@ -128,6 +128,11 @@ _status_lines_for_box() {
     print -r -- "Discovered:  ${disc_n:-0} (plists + processes)"
     print -r -- "Disabled:    ${disabled_n:-0} labels"
     print -r -- "Last Event:  $last_event"
+    # Lean breakdown (only in lean): how many bloat components are off. Cheap —
+    # in lean, disabled.list holds exactly the lean-blocked (bloat) set; the rest
+    # (essentials) keep running. Conditional so the block/allow box is unchanged
+    # and the 7-line box cap is respected (max 5 fixed + this + the pending line).
+    [[ "$state" == "lean" ]] && print -r -- "Lean:        ${disabled_n:-0} bloat off · essentials kept"
     # v4.19.0 PHANTOM-FIX (C): show the pending hint only when there is real work —
     # the 6th line then appears centered in the 7-line status box.
     local pending_n
