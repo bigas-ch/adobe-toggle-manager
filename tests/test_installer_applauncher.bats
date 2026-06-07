@@ -24,8 +24,7 @@ teardown() { [[ -n "${TMPDIR_AL:-}" && -d "$TMPDIR_AL" ]] && rm -rf "$TMPDIR_AL"
     run env ATM_APP_DIR="$APPDIR" /bin/zsh -c "source '$TMPDIR_AL/installer.sh' >/dev/null 2>&1; phase_applauncher"
     [ "$status" -eq 0 ]
     run /usr/bin/osadecompile "$APPDIR/Adobe Toggle.app"
-    [[ "$output" == *"adobe-toggle"* ]]
-    [[ "$output" == *"Terminal"* ]]
+    [[ "$output" == *"adobe-toggle"* && "$output" == *"Terminal"* && "$output" == *"close"* ]]
 }
 
 @test "phase_applauncher is idempotent (re-run replaces, still exit 0)" {
@@ -33,6 +32,15 @@ teardown() { [[ -n "${TMPDIR_AL:-}" && -d "$TMPDIR_AL" ]] && rm -rf "$TMPDIR_AL"
     run env ATM_APP_DIR="$APPDIR" /bin/zsh -c "source '$TMPDIR_AL/installer.sh' >/dev/null 2>&1; phase_applauncher"
     [ "$status" -eq 0 ]
     [ -d "$APPDIR/Adobe Toggle.app" ]
+}
+
+@test "phase_applauncher applies a custom icon when one is provided" {
+    echo "ICNSDATA" > "$TMPDIR_AL/custom.icns"
+    run env ATM_APP_DIR="$APPDIR" ATM_APP_ICON="$TMPDIR_AL/custom.icns" /bin/zsh -c "source '$TMPDIR_AL/installer.sh' >/dev/null 2>&1; phase_applauncher"
+    [ "$status" -eq 0 ]
+    [ -f "$APPDIR/Adobe Toggle.app/Contents/Resources/applet.icns" ]
+    run /bin/cat "$APPDIR/Adobe Toggle.app/Contents/Resources/applet.icns"
+    [[ "$output" == *"ICNSDATA"* ]]
 }
 
 @test "uninstall phase_applauncher removes the launcher (co-pflege)" {

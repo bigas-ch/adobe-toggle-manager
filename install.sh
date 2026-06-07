@@ -465,17 +465,36 @@ phase_applauncher() {
         print -u2 -- "  ⚠ osacompile not found — app launcher skipped (use the CLI: $CORE_DST)"
         return 0
     fi
-    # AppleScript: open Terminal and exec the deployed TUI. Single-quote the path
-    # so the space in "Application Support" is safe in the shell command.
+    # AppleScript: open Terminal, exec the deployed TUI, and CLOSE the window once
+    # the TUI quits (Terminal does not close on shell exit by default; with exec
+    # the window would otherwise sit dead at "[Process completed]"). We hold the
+    # tab reference, wait via `busy`, then close with `saving no` (an idle login
+    # shell alone triggers no "terminate processes?" prompt). Single-quote the
+    # path so the space in "Application Support" is safe in the shell command.
     local script="tell application \"Terminal\"
     activate
-    do script \"clear; exec '${CORE_DST}'\"
+    set _tab to do script \"clear; exec '${CORE_DST}'\"
+    delay 0.5
+    repeat while busy of _tab
+        delay 0.5
+    end repeat
+    close (first window whose tabs contains _tab) saving no
 end tell"
     /bin/rm -rf "$app_dir" 2>/dev/null
-    if print -r -- "$script" | /usr/bin/osacompile -o "$app_dir" 2>/dev/null; then
-        print "  ✓ App launcher: $app_dir"
-    else
+    if ! print -r -- "$script" | /usr/bin/osacompile -o "$app_dir" 2>/dev/null; then
         print -u2 -- "  ⚠ Could not create app launcher at $app_dir (non-fatal; use the CLI: $CORE_DST)"
+        return 0
+    fi
+    # Optional custom icon: place a .icns at assets/adobe-toggle.icns in the repo
+    # (or set ATM_APP_ICON). osacompile names the icon resource applet.icns and
+    # sets Info.plist CFBundleIconFile=applet, so overwriting it applies the icon.
+    local icon="${ATM_APP_ICON:-$SRC_DIR/assets/adobe-toggle.icns}"
+    if [[ -f "$icon" ]]; then
+        /bin/cp -f "$icon" "$app_dir/Contents/Resources/applet.icns" 2>/dev/null
+        /usr/bin/touch "$app_dir" 2>/dev/null   # nudge the Finder icon cache
+        print "  ✓ App launcher: $app_dir (custom icon)"
+    else
+        print "  ✓ App launcher: $app_dir"
     fi
     return 0
 }
