@@ -31,6 +31,25 @@ teardown() { sandbox_teardown; }
     [ "$output" = "HIT" ]
 }
 
+# T8 real-install tuning (2026-06-07): the Adobe Genuine GC client (AdobeGCClient,
+# spawned by com.adobe.GC.Scheduler-1.0 / GC.Invoker) was kept running by lean and
+# consumed ~31% CPU on a verified licensed install. GC = Adobe Genuine anti-piracy;
+# for a licensed user it is background bloat → curated into the bloat list.
+@test "_is_bloat matches the Adobe Genuine GC scheduler launchd agent" {
+    run zsh -c "source '$SCRIPT' >/dev/null 2>&1; _is_bloat 'com.adobe.GC.Scheduler-1.0' '/Library/LaunchAgents/com.adobe.GC.Invoker-1.0.plist' && echo HIT"
+    [ "$output" = "HIT" ]
+}
+
+@test "_is_bloat matches the AdobeGCClient Genuine process" {
+    run zsh -c "source '$SCRIPT' >/dev/null 2>&1; _is_bloat 'com.adobe.acc.AdobeGCClient' '/Library/Application Support/Adobe/AdobeGCClient/AdobeGCClient' && echo HIT"
+    [ "$output" = "HIT" ]
+}
+
+@test "_is_bloat does NOT match AdobeResourceSynchronizer (essential app helper)" {
+    run zsh -c "source '$SCRIPT' >/dev/null 2>&1; _is_bloat 'com.adobe.ResourceSynchronizer' '/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Helpers/AdobeResourceSynchronizer.app/Contents/MacOS/AdobeResourceSynchronizer' && echo HIT || echo MISS"
+    [ "$output" = "MISS" ]
+}
+
 # --- _is_lean_blocked predicate (design 3.3) -----------------------------
 # In lean, a component is blocked iff:
 #   (_is_bloat OR state==user_blocked) AND state != user_allowed

@@ -23,6 +23,10 @@ typeset -gra ATM_BLOAT_PATTERNS=(
     "armdc"                      # Adobe Remote Update Manager / auto-updater
     "genuine"                    # Adobe Genuine integrity service
     "ags_service"                # Adobe Genuine Software service
+    "gc.scheduler"               # Adobe Genuine GC scheduler agent (T8 real-install)
+    "gc.invoker"                 # Adobe Genuine GC invoker plist (T8 real-install)
+    "adobegcclient"              # Adobe Genuine GC client process (T8: ~31% CPU)
+    "adobegcinvoker"             # Adobe Genuine GC invoker process (T8)
     "cc content manager"         # Creative Cloud content sync
     "cccontentmanager"
     "creative cloud content"
