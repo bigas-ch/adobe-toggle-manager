@@ -445,12 +445,14 @@ block_action() {
 }
 
 # === Action: Lean ===
-# Predicate for kill_adobe_processes in lean: kill iff the process is curated
-# bloat AND not user_allowed. Receives (ident, binary) from the kill loop.
+# Predicate for kill_adobe_processes in lean. Delegates to the SINGLE lean
+# decision function so the kill path cannot drift from the launchd path (spec
+# 3.3: user_allowed spares, user_blocked kills, else curated bloat). Passes the
+# REAL binary as the path — a process line's field 3 is pid:<pid>, not a path, so
+# the discovered.list lookup would be wrong; the kill loop already has the binary.
+# Receives (ident, binary) from kill_adobe_processes; ident is the label key.
 _lean_kill_is_bloat() {
-    local ident="${1:-}" binary="${2:-}"
-    disabled_list_is_user_allowed "$ident" 2>/dev/null && return 1
-    _is_bloat "$ident" "$binary"
+    _is_lean_blocked "${1:-}" "" "${2:-}"
 }
 
 # lean_action — disable ONLY curated bloat (or user_blocked), keep essentials.

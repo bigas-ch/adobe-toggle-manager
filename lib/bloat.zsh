@@ -56,18 +56,27 @@ _is_bloat() {
 # looked up from discovered.list when available so the bloat match can also key
 # on the path (best-effort; works on label alone if the file is absent).
 _is_lean_blocked() {
-    local label="${1:-}" scope="${2:-}"
+    local label="${1:-}" scope="${2:-}" comp_path="${3:-}"
     [[ -z "$label" ]] && return 1
+    # Direct cache read (PB-04), NOT $(disabled_list_get_state ...): a command
+    # substitution runs in a subshell whose cache warm-up is discarded, forcing
+    # a full stat+reload on every call — the documented subshell-cache footgun
+    # (see the comment on disabled_list_is_user_allowed).
     local state=""
-    if (( ${+functions[disabled_list_get_state]} )); then
-        state=$(disabled_list_get_state "$label" 2>/dev/null) || state=""
+    if (( ${+functions[_disabled_list_cache_refresh]} )); then
+        _disabled_list_cache_refresh
+        state="${_DLIST_STATE_CACHE[$label]-}"
     fi
     [[ "$state" == "user_allowed" ]] && return 1   # user rescue wins over bloat
     [[ "$state" == "user_blocked" ]] && return 0   # user marked it off
-    local path="" tab=$'\t'
-    if [[ -f "$ATM_DISCOVERED_FILE" ]]; then
-        path=$(/usr/bin/grep -F -- "${tab}${label}${tab}" "$ATM_DISCOVERED_FILE" 2>/dev/null \
+    # If the caller supplied the path (the process-kill predicate passes the real
+    # binary), use it; otherwise look it up from discovered.list (launchd lines
+    # carry the plist path in field 3). comp_path, NOT `path`: in zsh `path` is
+    # the special array tied to $PATH — `local path=` would blank PATH (zsh tabu).
+    if [[ -z "$comp_path" && -f "$ATM_DISCOVERED_FILE" ]]; then
+        local tab=$'\t'
+        comp_path=$(/usr/bin/grep -F -- "${tab}${label}${tab}" "$ATM_DISCOVERED_FILE" 2>/dev/null \
                | /usr/bin/head -1 | /usr/bin/cut -f3)
     fi
-    _is_bloat "$label" "$path"
+    _is_bloat "$label" "$comp_path"
 }

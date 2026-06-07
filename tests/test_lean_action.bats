@@ -69,3 +69,12 @@ teardown() { sandbox_teardown; }
     "
     [ "$output" = "SPARE" ]
 }
+
+@test "lean kill predicate: non-bloat + user_blocked → kill (spec 3.3 parity with launchd path)" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        disabled_list_set_state com.adobe.SomeEssential gui user_blocked 2>/dev/null
+        _lean_kill_is_bloat 'com.adobe.SomeEssential' '/x' && echo KILL || echo SPARE
+    "
+    [ "$output" = "KILL" ]
+}
