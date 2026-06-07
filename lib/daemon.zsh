@@ -187,6 +187,17 @@ _daemon_run_action() {
     esac
 }
 
+# _daemon_state_notify — emit the state-change desktop notification for a state.
+# Extracted from daemon_main's loop so the per-state message is unit-testable
+# (block=red, lean=yellow, allow=green). Unknown states emit nothing.
+_daemon_state_notify() {
+    case "${1-}" in
+        block) notify "Adobe Toggle" "🔴 Adobe blocked" ;;
+        lean)  notify "Adobe Toggle" "🟡 Adobe lean (bloat off)" ;;
+        allow) notify "Adobe Toggle" "🟢 Adobe allowed" ;;
+    esac
+}
+
 # _daemon_periodic_maintenance — log rotation + authority-cache mgmt.
 # Called every tick, performs its own frequency checks.
 _daemon_periodic_maintenance() {
@@ -256,11 +267,7 @@ daemon_main() {
         # State-change detection + notification (loop-local prev_state tracking)
         if [[ "$state" != "$prev_state" ]]; then
             log_event STATE_CHANGE "${prev_state:-init}→${state}"
-            case "$state" in
-                block) notify "Adobe Toggle" "🔴 Adobe blocked" ;;
-                lean)  notify "Adobe Toggle" "🟡 Adobe lean (bloat off)" ;;
-                allow) notify "Adobe Toggle" "🟢 Adobe allowed" ;;
-            esac
+            _daemon_state_notify "$state"
             prev_state="$state"
         fi
 

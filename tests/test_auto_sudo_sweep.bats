@@ -129,6 +129,24 @@ _init() { mkdir -p "$ATM_BASE/logs"; printf 'block\n' > "$ATM_BASE/state"; }
     [[ "$output" == *"SWEEP_CALLED"* ]]
 }
 
+@test "lean (v1.1.0): _tui_action_l does NOT auto-chain the sweep even under block's chaining conditions" {
+    # Identical setup to the block auto-chain test above (which DOES sweep) — but
+    # lean must never auto-sweep all system LaunchDaemons. Pins the lean-specific
+    # no-sweep contract: a copy-paste of block's chain into _tui_action_l fails here.
+    _init
+    : > "$ATM_BASE/disabled.list"
+    pam_tid_enable
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1
+        discover_plists() { printf 'launchd\tcom.adobe.sys\t/x.plist\tsystem\n'; }
+        _tui_signal_daemon() { return 1; }
+        _render_with_blink() { :; }
+        _tui_action_u() { echo SWEEP_CALLED; }
+        _tui_action_l
+    "
+    [[ "$output" != *"SWEEP_CALLED"* ]]
+}
+
 @test "_tui_action_b: does NOT auto-chain when the flag is disabled" {
     _init
     : > "$ATM_BASE/disabled.list"

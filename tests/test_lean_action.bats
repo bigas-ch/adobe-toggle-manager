@@ -17,9 +17,17 @@ teardown() { sandbox_teardown; }
         lean_action
         grep -q 'com.adobe.CCXProcess' \"\$ATM_DISABLED_FILE\" && echo BLOAT_BLOCKED
         grep -q 'com.adobe.AcrobatLicensing' \"\$ATM_DISABLED_FILE\" && echo ESSENTIAL_BLOCKED || echo ESSENTIAL_KEPT
+        # Phase-1 behaviour, independent of phase-2 disabled.list normalisation:
+        # the essential must receive ZERO launchctl calls; the bloat must be acted on.
+        grep -q 'com.adobe.AcrobatLicensing' \"\$ATM_MOCK_LOG_DIR/launchctl.log\" && echo ESSENTIAL_TOUCHED || echo ESSENTIAL_UNTOUCHED
+        grep -q 'com.adobe.CCXProcess' \"\$ATM_MOCK_LOG_DIR/launchctl.log\" && echo BLOAT_TOUCHED || echo BLOAT_UNTOUCHED
     "
-    # single combined final assertion — bats only checks the LAST command
-    [[ "$output" == *"BLOAT_BLOCKED"* && "$output" == *"ESSENTIAL_KEPT"* ]]
+    # combined final assertion (bats only checks the LAST command). The mock-log
+    # asserts pin phase 1 so a removed _is_lean_blocked gate can't hide behind the
+    # phase-2 re-enable (which would make the essential get bootout/disable/enable
+    # churn while still looking clean in disabled.list).
+    [[ "$output" == *"BLOAT_BLOCKED"* && "$output" == *"ESSENTIAL_KEPT"* \
+       && "$output" == *"ESSENTIAL_UNTOUCHED"* && "$output" == *"BLOAT_TOUCHED"* ]]
 }
 
 @test "lean_action re-enables a non-bloat label a prior block had disabled" {
@@ -44,11 +52,13 @@ teardown() { sandbox_teardown; }
         disabled_list_set_state com.adobe.CCXProcess gui user_allowed
         lean_action
         # user_allowed entry stays in disabled.list as user_allowed (not enabled,
-        # not converted) AND is not blocked again.
-        grep -c 'com.adobe.CCXProcess' \"\$ATM_DISABLED_FILE\"
+        # not converted to auto_blocked). Pin BOTH: exactly one entry AND the
+        # state column is still user_allowed (a line-count-only check would miss
+        # a user_allowed→auto_blocked corruption that allow_action later wipes).
+        echo \"count=\$(grep -c 'com.adobe.CCXProcess' \"\$ATM_DISABLED_FILE\")\"
+        echo \"state=\$(disabled_list_get_state com.adobe.CCXProcess)\"
     "
-    # exactly one entry, still present (user intent persistent)
-    [ "$output" = "1" ]
+    [[ "$output" == *"count=1"* && "$output" == *"state=user_allowed"* ]]
 }
 
 @test "lean kill predicate: bloat process → kill (return 0)" {
@@ -77,4 +87,18 @@ teardown() { sandbox_teardown; }
         _lean_kill_is_bloat 'com.adobe.SomeEssential' '/x' && echo KILL || echo SPARE
     "
     [ "$output" = "KILL" ]
+}
+
+@test "lean_action keeps a system-scope entry in disabled.list (user-mode cannot re-enable system)" {
+    # A non-bloat system entry a prior block disabled would normally be re-enabled
+    # in step 2 — but system scope is kept (the user-mode daemon cannot enable it
+    # without sudo). Pins the system branch of the re-enable pass.
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        printf 'launchd\tcom.adobe.SomeSystemDaemon\t/p1\tsystem\n' > \"\$ATM_DISCOVERED_FILE\"
+        disabled_list_set_state com.adobe.SomeSystemDaemon system auto_blocked
+        lean_action
+        grep -q 'com.adobe.SomeSystemDaemon' \"\$ATM_DISABLED_FILE\" && echo SYSTEM_KEPT || echo SYSTEM_DROPPED
+    "
+    [ "$output" = "SYSTEM_KEPT" ]
 }

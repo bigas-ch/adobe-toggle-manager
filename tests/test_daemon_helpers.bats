@@ -113,6 +113,24 @@ teardown() { sandbox_teardown; }
     [[ "$output" == *"sweep=1"* && "$output" == *"lean=1"* && "$output" == *"block=0"* && "$output" == *"allow=0"* ]]
 }
 
+@test "lean (v1.1.0): _daemon_state_notify emits the yellow lean notification" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1
+        notify() { echo \"NOTIFY:\$2\"; }
+        _daemon_state_notify lean
+    "
+    [[ "$output" == *"🟡"* && "$output" == *"lean"* ]]
+}
+
+@test "_daemon_state_notify emits a distinct indicator per state" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1
+        notify() { echo \"\$2\"; }
+        _daemon_state_notify block; _daemon_state_notify lean; _daemon_state_notify allow
+    "
+    [[ "$output" == *"🔴"* && "$output" == *"🟡"* && "$output" == *"🟢"* ]]
+}
+
 # === _daemon_periodic_maintenance =============================================
 
 @test "PD-01: _daemon_periodic_maintenance calls cache_save at tick%10==0" {
