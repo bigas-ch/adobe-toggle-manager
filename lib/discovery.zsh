@@ -328,6 +328,9 @@ _validate_kill_target() {
 }
 
 kill_adobe_processes() {
+    # v1.1.0 (lean): optional predicate <ident> <binary> → return 0 to kill the
+    # process, non-0 to spare it. Empty predicate (default) = kill all (block).
+    local predicate="${1:-}"
     local _type ident src binary pid
     local term_count=0 kill_count=0
     # PB-03 (v4.15.0): the TERM loop reads from discovered.list (fresh from
@@ -338,6 +341,7 @@ kill_adobe_processes() {
     while IFS=$'\t' read -r _type ident src binary; do
         pid="${src#pid:}"
         _validate_kill_target "$pid" "$ident" "$binary" || continue
+        [[ -n "$predicate" ]] && ! "$predicate" "$ident" "$binary" && continue
         if kill -TERM "$pid" 2>/dev/null; then
             log_event KILLED "${ident}:${pid}:TERM"
             term_count=$(( term_count + 1 ))
@@ -355,6 +359,7 @@ kill_adobe_processes() {
         while IFS=$'\t' read -r _type ident src binary; do
             pid="${src#pid:}"
             _validate_kill_target "$pid" "$ident" "$binary" || continue
+        [[ -n "$predicate" ]] && ! "$predicate" "$ident" "$binary" && continue
             if kill -KILL "$pid" 2>/dev/null; then
                 log_event KILLED "${ident}:${pid}:KILL"
                 kill_count=$(( kill_count + 1 ))
@@ -436,6 +441,76 @@ block_action() {
                 backend_dispatch pluginkit block "$pl_type" "$pl_id" "$pl_scope" "$pl_path" 2>/dev/null
             done
         backend_dispatch pluginkit kill_running 2>/dev/null
+    fi
+}
+
+# === Action: Lean ===
+# Predicate for kill_adobe_processes in lean: kill iff the process is curated
+# bloat AND not user_allowed. Receives (ident, binary) from the kill loop.
+_lean_kill_is_bloat() {
+    local ident="${1:-}" binary="${2:-}"
+    disabled_list_is_user_allowed "$ident" 2>/dev/null && return 1
+    _is_bloat "$ident" "$binary"
+}
+
+# lean_action — disable ONLY curated bloat (or user_blocked), keep essentials.
+# Mirrors block_action's disable side but gated by _is_lean_blocked, plus a
+# re-enable pass so a prior `block` cleanly downgrades to lean. Idempotent
+# (daemon-tick safe): disable/enable are no-ops when already in the target state.
+lean_action() {
+    local _type label _plist scope
+    # 1) Disable the bloat subset (launchd). Process substitution (not a pipe)
+    #    so disable_launchd_label's daemon-counter mutations survive (see PB-02).
+    while IFS=$'\t' read -r _type label _plist scope; do
+        [[ -z "$label" ]] && continue
+        if _is_lean_blocked "$label" "$scope"; then
+            disable_launchd_label "$label" "$scope"
+        fi
+    done < <(_read_discovered_by_type launchd)
+
+    # 2) Re-enable non-bloat launchd entries a prior `block` left disabled
+    #    (clean block→lean transition). Keep user_allowed + system + entries
+    #    that are still lean-blocked; enable + drop the rest. H-1: the TSV
+    #    re-read is UNTRUSTED — re-validate label + scope before acting.
+    if [[ -f "$ATM_DISABLED_FILE" ]]; then
+        local d_label d_scope d_ts d_state
+        local tmp="$ATM_DISABLED_FILE.tmp.$$"
+        : > "$tmp"
+        while IFS=$'\t' read -r d_label d_scope d_ts d_state; do
+            [[ -z "$d_label" ]] && continue
+            _validate_label "$d_label" || continue
+            case "$d_scope" in
+                gui|user|system) ;;
+                *) continue ;;
+            esac
+            [[ -z "$d_state" ]] && d_state="auto_blocked"   # lazy 3-col migration
+            if [[ "$d_state" == "user_allowed" || "$d_scope" == "system" ]]; then
+                print -- "${d_label}\t${d_scope}\t${d_ts}\t${d_state}" >> "$tmp"
+                continue
+            fi
+            if _is_lean_blocked "$d_label" "$d_scope"; then
+                print -- "${d_label}\t${d_scope}\t${d_ts}\t${d_state}" >> "$tmp"   # stays blocked in lean
+            else
+                enable_launchd_label "$d_label" "$d_scope"                          # non-bloat → re-enable + drop
+            fi
+        done < "$ATM_DISABLED_FILE"
+        /bin/mv -f "$tmp" "$ATM_DISABLED_FILE"
+    fi
+
+    # 3) Kill running bloat processes only (spares essentials + user_allowed).
+    kill_adobe_processes _lean_kill_is_bloat
+
+    # 4) v4.3.0 additive: pluginkit backend — block only bloat-classified IDs.
+    if (( _BACKENDS_AVAILABLE )) && backend_is_registered pluginkit 2>/dev/null; then
+        local pl_type pl_id pl_scope pl_path
+        backend_dispatch pluginkit discover 2>/dev/null \
+            | while IFS=$'\t' read -r pl_type pl_id pl_scope pl_path; do
+                [[ -z "$pl_id" ]] && continue
+                disabled_list_is_user_allowed "$pl_id" 2>/dev/null && continue
+                if _is_lean_blocked "$pl_id" "$pl_scope" || _is_bloat "$pl_id" "$pl_path"; then
+                    backend_dispatch pluginkit block "$pl_type" "$pl_id" "$pl_scope" "$pl_path" 2>/dev/null
+                fi
+            done
     fi
 }
 
