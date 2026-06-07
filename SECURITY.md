@@ -8,8 +8,8 @@ before reporting an issue.
 
 | Version | Supported |
 | ------- | --------- |
-| 4.19.x  | Yes       |
-| < 4.19  | No        |
+| 1.1.x   | Yes       |
+| < 1.1   | No        |
 
 ## Reporting a vulnerability
 

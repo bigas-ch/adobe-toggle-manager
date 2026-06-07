@@ -45,6 +45,25 @@ teardown() { [[ -n "${TMPDIR_AL:-}" && -d "$TMPDIR_AL" ]] && rm -rf "$TMPDIR_AL"
     [[ "$output" == *"ICNSDATA"* ]]
 }
 
+@test "custom icon wins: Assets.car dropped + CFBundleIconName removed" {
+    # Regression guard: modern osacompile ships Resources/Assets.car and sets
+    # Info.plist CFBundleIconName=applet, which OUTRANKS the applet.icns we replace
+    # → the generic script icon would win. The fix removes both so the .icns is used.
+    echo "ICNSDATA" > "$TMPDIR_AL/custom.icns"
+    run env ATM_APP_DIR="$APPDIR" ATM_APP_ICON="$TMPDIR_AL/custom.icns" /bin/zsh -c "source '$TMPDIR_AL/installer.sh' >/dev/null 2>&1; phase_applauncher"
+    [ "$status" -eq 0 ]
+    local app="$APPDIR/Adobe Toggle.app"
+    # No competing asset-catalog icon remains.
+    [ ! -f "$app/Contents/Resources/Assets.car" ]
+    # CFBundleIconName must be gone (PlistBuddy Print exits non-zero when absent),
+    # while CFBundleIconFile must still point at the .icns.
+    run /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$app/Contents/Info.plist"
+    [ "$status" -ne 0 ]
+    run /usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$app/Contents/Info.plist"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "applet" ]]
+}
+
 @test "uninstall phase_applauncher removes the launcher (co-pflege)" {
     mkdir -p "$APPDIR/Adobe Toggle.app/Contents"
     : > "$APPDIR/Adobe Toggle.app/Contents/Info.plist"

@@ -8,6 +8,18 @@ See the README's "Versioning" section for the declared public API.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-08
+
+### Fixed
+- **Applications launcher icon** — the `Adobe Toggle.app` launcher now shows its
+  bundled custom icon instead of the generic script-applet icon. Modern
+  `osacompile` ships an asset catalog (`Contents/Resources/Assets.car`) and sets
+  `CFBundleIconName`, which outranks the `CFBundleIconFile` `.icns` the installer
+  replaces — so the custom icon was silently ignored. The installer now drops
+  `Assets.car`, removes `CFBundleIconName`, re-signs the bundle ad-hoc
+  (`codesign --force --sign -`, required after editing a signed bundle), and
+  busts the LaunchServices icon cache (`lsregister -f`).
+
 ## [1.1.0] - 2026-06-07
 
 ### Added
@@ -144,5 +156,7 @@ declares a stable public API (CLI subcommands, config keys, exit codes, and the
   authority matching, `launchctl disable` blocking, a terminal UI, and
   state that persists across reboot and logout.
 
-[Unreleased]: https://github.com/bigas-ch/adobe-toggle-manager/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/bigas-ch/adobe-toggle-manager/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/bigas-ch/adobe-toggle-manager/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/bigas-ch/adobe-toggle-manager/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/bigas-ch/adobe-toggle-manager/releases/tag/v1.0.0

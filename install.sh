@@ -1,6 +1,6 @@
 #!/bin/zsh
 # === Adobe Toggle — Installer ===
-# Version: 1.1.0 (see CHANGELOG.md; phases: preflight -> appsupport -> copy_scripts -> plist -> bootstrap -> verify -> applauncher)
+# Version: 1.1.1 (see CHANGELOG.md; phases: preflight -> appsupport -> copy_scripts -> plist -> bootstrap -> verify -> applauncher)
 # 7 phases: preflight → appsupport → copy_scripts → plist → bootstrap → verify → applauncher
 # Rollback on failure in any phase (preflight is read-only, no mutation).
 #
@@ -484,11 +484,25 @@ end tell"
     fi
     # Optional custom icon: place a .icns at assets/adobe-toggle.icns in the repo
     # (or set ATM_APP_ICON). osacompile names the icon resource applet.icns and
-    # sets Info.plist CFBundleIconFile=applet, so overwriting it applies the icon.
+    # sets Info.plist CFBundleIconFile=applet. BUT modern osacompile (macOS 13+)
+    # ALSO ships an asset catalog (Resources/Assets.car) and sets CFBundleIconName
+    # — and CFBundleIconName (asset catalog) OUTRANKS CFBundleIconFile (.icns).
+    # So overwriting applet.icns alone is silently ignored; macOS keeps drawing the
+    # generic script-applet icon from Assets.car. To make the custom icon win we
+    # must (a) drop Assets.car, (b) delete CFBundleIconName so the .icns is used,
+    # (c) re-sign (editing Contents/ breaks osacompile's ad-hoc signature → macOS 26
+    # would flag the app as damaged), and (d) bust the LaunchServices icon cache.
+    # All steps are no-ops/non-fatal on older macOS that ships neither artefact.
     local icon="${ATM_APP_ICON:-$SRC_DIR/assets/adobe-toggle.icns}"
     if [[ -f "$icon" ]]; then
         /bin/cp -f "$icon" "$app_dir/Contents/Resources/applet.icns" 2>/dev/null
+        /bin/rm -f "$app_dir/Contents/Resources/Assets.car" 2>/dev/null
+        /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" \
+            "$app_dir/Contents/Info.plist" 2>/dev/null || true
+        /usr/bin/codesign --force --sign - "$app_dir" 2>/dev/null || true
         /usr/bin/touch "$app_dir" 2>/dev/null   # nudge the Finder icon cache
+        local lsreg="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        [[ -x "$lsreg" ]] && "$lsreg" -f "$app_dir" 2>/dev/null || true
         print "  ✓ App launcher: $app_dir (custom icon)"
     else
         print "  ✓ App launcher: $app_dir"
