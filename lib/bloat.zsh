@@ -80,3 +80,20 @@ _is_lean_blocked() {
     fi
     _is_bloat "$label" "$comp_path"
 }
+
+# _lean_pending_essential_system_count — count system-scope entries in
+# disabled.list that lean would NOT block (i.e. ESSENTIALS a prior `block`
+# disabled, which the user-mode daemon cannot re-enable without sudo). Bloat
+# system entries are excluded — lean correctly keeps those off, so they must not
+# trigger a re-enable hint. Prints a plain integer (0 when none / no file).
+_lean_pending_essential_system_count() {
+    [[ -f "$ATM_DISABLED_FILE" ]] || { print -- 0; return 0; }
+    local label scope ts state n=0
+    while IFS=$'\t' read -r label scope ts state; do
+        [[ "$scope" == "system" ]] || continue
+        [[ "$state" == "user_allowed" ]] && continue
+        # essential = NOT lean-blocked (lean would keep it running, but can't here)
+        _is_lean_blocked "$label" "$scope" || n=$(( n + 1 ))
+    done < "$ATM_DISABLED_FILE"
+    print -- "$n"
+}

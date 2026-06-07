@@ -74,6 +74,30 @@ teardown() { sandbox_teardown; }
     [[ "$output" == "lean" ]]
 }
 
+@test "lean (v1.1.0): _tui_action_l surfaces a re-enable hint when an essential system daemon is stuck" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        _render_with_blink() { echo \"RENDER:\$1\"; }
+        _tui_signal_daemon() { return 1; }
+        _auto_sudo_sweep_enabled() { return 1; }
+        disabled_list_set_state com.adobe.SomeSystemEssential system auto_blocked
+        _tui_action_l
+    "
+    [[ "$output" == *"[e]"* ]]
+}
+
+@test "lean (v1.1.0): _tui_action_l does NOT surface the hint when only bloat system daemons are off" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        _render_with_blink() { echo \"RENDER:\$1\"; }
+        _tui_signal_daemon() { return 1; }
+        _auto_sudo_sweep_enabled() { return 1; }
+        disabled_list_set_state com.adobe.ARMDC.armdcHelper system auto_blocked
+        _tui_action_l
+    "
+    [[ "$output" != *"[e]"* ]]
+}
+
 # === _tui_action_d — discovery ================================================
 
 @test "PD-02: _tui_action_d calls discovery_sweep + shows component count" {

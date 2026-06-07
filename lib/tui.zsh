@@ -497,7 +497,20 @@ _tui_action_l() {
     else
         sig_msg="🟡 State 'lean' set (daemon not active)."
     fi
-    _render_with_blink "$sig_msg"
+    # No auto-sudo-sweep chain (lean must NOT sweep all system LaunchDaemons —
+    # that is full-block behaviour). But if a prior Block left ESSENTIAL
+    # (non-bloat) system daemons disabled, the user-mode daemon cannot re-enable
+    # them without sudo → surface a persistent hint so the user can recover via
+    # [e]. Bloat system daemons correctly stay off and are NOT counted, so the
+    # hint only fires for genuine essentials (avoids inviting a bloat re-enable).
+    local stuck
+    stuck=$(_lean_pending_essential_system_count)
+    if [[ "$stuck" == <1-> ]]; then
+        live_state_set pending_system "$stuck"
+        _render_with_blink "${sig_msg} ⚠️  ${stuck} essential system item(s) still disabled from a prior Block — press [e] to re-enable (sudo)."
+    else
+        _render_with_blink "$sig_msg"
+    fi
 }
 
 # _tui_action_d — manual discovery + show the component count.

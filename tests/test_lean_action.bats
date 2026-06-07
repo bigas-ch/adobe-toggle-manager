@@ -89,6 +89,33 @@ teardown() { sandbox_teardown; }
     [ "$output" = "KILL" ]
 }
 
+@test "lean pending: a non-bloat system entry left disabled counts as pending essential" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        disabled_list_set_state com.adobe.SomeSystemEssential system auto_blocked
+        _lean_pending_essential_system_count
+    "
+    [ "$output" = "1" ]
+}
+
+@test "lean pending: a bloat system entry left disabled is NOT counted (correctly stays off)" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        disabled_list_set_state com.adobe.ARMDC.armdcHelper system auto_blocked
+        _lean_pending_essential_system_count
+    "
+    [ "$output" = "0" ]
+}
+
+@test "lean pending: a user_allowed system entry is NOT counted" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        disabled_list_set_state com.adobe.SomeSystemEssential system user_allowed
+        _lean_pending_essential_system_count
+    "
+    [ "$output" = "0" ]
+}
+
 @test "lean_action keeps a system-scope entry in disabled.list (user-mode cannot re-enable system)" {
     # A non-bloat system entry a prior block disabled would normally be re-enabled
     # in step 2 — but system scope is kept (the user-mode daemon cannot enable it
