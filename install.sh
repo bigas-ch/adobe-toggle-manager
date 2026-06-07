@@ -41,7 +41,7 @@ typeset -gr HEALTHCHECK_LABEL="com.user.adobe-toggle.healthcheck"
 typeset -ga _PHASES_DONE=()
 
 # === Required inventory (preflight + verify) ===
-# All 12 lib/ modules are mandatory — a missing file is soft-sourced
+# All 15 lib/ modules are mandatory — a missing file is soft-sourced
 # silently in the core ([[ -f ]] && source), so the daemon then runs with
 # undefined functions (e.g. notify, log_event) and only crashes on the
 # first call. Preflight prevents that.
@@ -49,6 +49,7 @@ typeset -gar REQUIRED_LIB_FILES=(
     log.zsh
     state.zsh
     disabled_list.zsh
+    bloat.zsh
     discovery.zsh
     config.zsh
     notify.zsh

@@ -8,7 +8,7 @@ load helpers/sandbox.bash
 # Mandatory inventory — must match the REQUIRED_LIB_FILES/REQUIRED_BACKEND_FILES
 # list in the installer. When those grow there, this list has to grow with them
 # (no default-sharing possible because typeset -gar is readonly).
-REQUIRED_LIB=(log.zsh state.zsh disabled_list.zsh discovery.zsh config.zsh notify.zsh pam.zsh tui.zsh daemon.zsh box.zsh watcher.zsh backend_registry.zsh json.zsh whitelist.zsh)
+REQUIRED_LIB=(log.zsh state.zsh disabled_list.zsh bloat.zsh discovery.zsh config.zsh notify.zsh pam.zsh tui.zsh daemon.zsh box.zsh watcher.zsh backend_registry.zsh json.zsh whitelist.zsh)
 REQUIRED_BACKENDS=(_interface.zsh launchd.zsh pluginkit.zsh)
 
 setup() {
@@ -56,14 +56,14 @@ populate_full_lib() {
     [[ "$output" == *"lib/backends/launchd.zsh missing"* ]]
 }
 
-@test "preflight: empty lib/ → exit 1, ALL 17 files reported (collect-all-errors design)" {
+@test "preflight: empty lib/ → exit 1, ALL 18 files reported (collect-all-errors design)" {
     mkdir -p "$TMPDIR_PRE/lib/backends"
     run /bin/zsh -c "source '$TMPDIR_PRE/installer.sh' >/dev/null 2>&1; phase_preflight"
     [ "$status" -eq 1 ]
-    # 14 lib + 3 backends = 17 missing (lib/whitelist.zsh added in v4.8.0)
+    # 15 lib + 3 backends = 18 missing (lib/bloat.zsh added in v1.1.0)
     local count
     count=$(echo "$output" | /usr/bin/grep -c "missing in source tree")
-    [ "$count" -eq 17 ]
+    [ "$count" -eq 18 ]
 }
 
 @test "preflight: macOS-version detected (real system has sw_vers)" {
@@ -85,7 +85,7 @@ populate_full_lib() {
     [[ "$output" == *"Xcode CLT"* ]]
 }
 
-@test "preflight: REQUIRED_LIB_FILES contains all 14 active lib modules" {
+@test "preflight: REQUIRED_LIB_FILES contains all 15 active lib modules" {
     # Guard against drift: if someone adds a new lib/ module but forgets to
     # extend REQUIRED_LIB_FILES, preflight would blindly skip over it.
     local actual_lib_count

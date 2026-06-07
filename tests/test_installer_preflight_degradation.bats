@@ -10,7 +10,7 @@
 # Degradation is injected via the ATM_*_BIN override hooks (INST.1) pointing at
 # a nonexistent path.
 
-REQUIRED_LIB=(log.zsh state.zsh disabled_list.zsh discovery.zsh config.zsh notify.zsh pam.zsh tui.zsh daemon.zsh box.zsh watcher.zsh backend_registry.zsh json.zsh whitelist.zsh)
+REQUIRED_LIB=(log.zsh state.zsh disabled_list.zsh bloat.zsh discovery.zsh config.zsh notify.zsh pam.zsh tui.zsh daemon.zsh box.zsh watcher.zsh backend_registry.zsh json.zsh whitelist.zsh)
 REQUIRED_BACKENDS=(_interface.zsh launchd.zsh pluginkit.zsh)
 
 setup() {

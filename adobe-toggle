@@ -176,6 +176,9 @@ typeset -gi _DAEMON_PENDING_SYSTEM=0
 # === Disabled-list I/O — extracted into lib/disabled_list.zsh (v4.4.0) ===
 [[ -f "$ATM_LIB_DIR/disabled_list.zsh" ]] && source "$ATM_LIB_DIR/disabled_list.zsh"
 
+# === Lean-state bloat curation — lib/bloat.zsh (v1.1.0) ===
+[[ -f "$ATM_LIB_DIR/bloat.zsh" ]] && source "$ATM_LIB_DIR/bloat.zsh"
+
 
 # === Discovery + block/allow actions — extracted into lib/discovery.zsh (v4.4.0) ===
 [[ -f "$ATM_LIB_DIR/discovery.zsh" ]] && source "$ATM_LIB_DIR/discovery.zsh"
