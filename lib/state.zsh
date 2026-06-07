@@ -1,6 +1,6 @@
 #!/bin/zsh
 # === lib/state.zsh — Persistent state + live heartbeat state ===
-# Module responsibility: state file (block|allow) + live_state (heartbeat,
+# Module responsibility: state file (block|lean|allow) + live_state (heartbeat,
 # counters, last-events) + filesystem permission hardening.
 #
 # Dependencies: log (log_warn, log_error), global ATM_BASE/STATE_FILE/
@@ -112,7 +112,7 @@ read_state() {
     # In case the file was empty
     [[ -z "$s" ]] && { log_warn "state file empty, fallback to block"; print -- "block"; return 0; }
     case "$s" in
-        block|allow) print -- "$s" ;;
+        block|lean|allow) print -- "$s" ;;
         *) log_warn "state file corrupt ('$s'), fallback to block"; print -- "block" ;;
     esac
 }
@@ -120,7 +120,7 @@ read_state() {
 write_state() {
     local new="$1"
     case "$new" in
-        block|allow) ;;
+        block|lean|allow) ;;
         *) log_error "write_state: invalid value '$new'"; return 2 ;;
     esac
     [[ -d "$ATM_BASE" ]] || /bin/mkdir -p "$ATM_BASE" || return 1
