@@ -1,7 +1,7 @@
 #!/bin/zsh
 # === Adobe Toggle — Installer ===
-# Version: 1.0.0 (see CHANGELOG.md; phases: preflight -> appsupport -> copy_scripts -> plist -> bootstrap -> verify)
-# 6 phases: preflight → appsupport → copy_scripts → plist → bootstrap → verify
+# Version: 1.0.0 (see CHANGELOG.md; phases: preflight -> appsupport -> copy_scripts -> plist -> bootstrap -> verify -> applauncher)
+# 7 phases: preflight → appsupport → copy_scripts → plist → bootstrap → verify → applauncher
 # Rollback on failure in any phase (preflight is read-only, no mutation).
 #
 # Options:
@@ -448,6 +448,38 @@ phase_verify() {
     print "OK — daemon PID $pid, state: $(/bin/cat "$APP_SUPPORT/state"), lib inventory complete ($((${#REQUIRED_LIB_FILES[@]} + ${#REQUIRED_BACKEND_FILES[@]})) files)."
 }
 
+# phase_applauncher — create a double-clickable launcher in the Applications
+# folder that opens the TUI in Terminal.app. NON-FATAL: a failure here never
+# aborts the install (the CLI + daemon work without it). The target dir is
+# overridable via ATM_APP_DIR (tests); falls back to ~/Applications when the
+# system /Applications is not writable.
+phase_applauncher() {
+    local app_name="Adobe Toggle.app"
+    local app_base="${ATM_APP_DIR:-/Applications}"
+    if [[ ! -d "$app_base" || ! -w "$app_base" ]]; then
+        app_base="$HOME/Applications"
+        /bin/mkdir -p "$app_base" 2>/dev/null
+    fi
+    local app_dir="$app_base/$app_name"
+    if [[ ! -x /usr/bin/osacompile ]]; then
+        print -u2 -- "  ⚠ osacompile not found — app launcher skipped (use the CLI: $CORE_DST)"
+        return 0
+    fi
+    # AppleScript: open Terminal and exec the deployed TUI. Single-quote the path
+    # so the space in "Application Support" is safe in the shell command.
+    local script="tell application \"Terminal\"
+    activate
+    do script \"clear; exec '${CORE_DST}'\"
+end tell"
+    /bin/rm -rf "$app_dir" 2>/dev/null
+    if print -r -- "$script" | /usr/bin/osacompile -o "$app_dir" 2>/dev/null; then
+        print "  ✓ App launcher: $app_dir"
+    else
+        print -u2 -- "  ⚠ Could not create app launcher at $app_dir (non-fatal; use the CLI: $CORE_DST)"
+    fi
+    return 0
+}
+
 rollback() {
     local p
     print -u2 -- "Rollback…"
@@ -479,7 +511,7 @@ main() {
     [[ -f "$CORE_SRC" ]] || { print -u2 -- "Core script not found: $CORE_SRC"; return 2; }
 
     local phase
-    for phase in preflight appsupport copy_scripts plist bootstrap verify; do
+    for phase in preflight appsupport copy_scripts plist bootstrap verify applauncher; do
         print "→ Phase: $phase"
         if ! "phase_${phase}"; then
             print -u2 -- "Phase '$phase' failed."

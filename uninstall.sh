@@ -10,7 +10,7 @@
 # Version: 1.0.0
 # Forward-only removal in 9 phases (no rollback — deletion is irreversible):
 #   confirm → release_adobe → backup_logs → bootout → kill_processes
-#           → plists → appsupport → src_symlink → summary
+#           → plists → appsupport → src_symlink → applauncher → summary
 #
 # The source repo under ${0:A:h} is left UNTOUCHED. Only runtime artifacts
 # are removed (~/Library/Application Support/AdobeToggleManager/,
@@ -428,6 +428,23 @@ phase_src_symlink() {
     fi
 }
 
+# === Phase: applauncher (remove the Applications launcher) ==============
+# Co-maintained with install.sh phase_applauncher. Removes the .app from both
+# possible install locations (/Applications + ~/Applications fallback). The base
+# is overridable via ATM_APP_DIR (tests).
+phase_applauncher() {
+    local app_name="Adobe Toggle.app"
+    local d removed=0
+    for d in "${ATM_APP_DIR:-/Applications}/$app_name" "$HOME/Applications/$app_name"; do
+        if [[ -d "$d" ]]; then
+            do_run /bin/rm -rf "$d" || return 1
+            print "  rm -rf: $d"
+            removed=1
+        fi
+    done
+    (( removed )) || print "  no app launcher found"
+}
+
 # === Phase: summary =====================================================
 phase_summary() {
     print
@@ -455,7 +472,7 @@ main() {
 
     local phase
     for phase in confirm release_adobe backup_logs bootout kill_processes \
-                 plists appsupport src_symlink summary; do
+                 plists appsupport src_symlink applauncher summary; do
         print
         print "→ Phase: $phase"
         if ! "phase_${phase}"; then
