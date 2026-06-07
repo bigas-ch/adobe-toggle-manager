@@ -47,3 +47,27 @@ _is_bloat() {
     done
     return 1
 }
+
+# _is_lean_blocked <label> <scope> → 0 if this component should be disabled in
+# the lean state, else 1. Reuses the existing per-component disabled.list
+# states instead of a new schema:
+#   block iff (_is_bloat OR state==user_blocked) AND state != user_allowed.
+# user_allowed always wins (essential rescue, v4.8.0). The component path is
+# looked up from discovered.list when available so the bloat match can also key
+# on the path (best-effort; works on label alone if the file is absent).
+_is_lean_blocked() {
+    local label="${1:-}" scope="${2:-}"
+    [[ -z "$label" ]] && return 1
+    local state=""
+    if (( ${+functions[disabled_list_get_state]} )); then
+        state=$(disabled_list_get_state "$label" 2>/dev/null) || state=""
+    fi
+    [[ "$state" == "user_allowed" ]] && return 1   # user rescue wins over bloat
+    [[ "$state" == "user_blocked" ]] && return 0   # user marked it off
+    local path="" tab=$'\t'
+    if [[ -f "$ATM_DISCOVERED_FILE" ]]; then
+        path=$(/usr/bin/grep -F -- "${tab}${label}${tab}" "$ATM_DISCOVERED_FILE" 2>/dev/null \
+               | /usr/bin/head -1 | /usr/bin/cut -f3)
+    fi
+    _is_bloat "$label" "$path"
+}
