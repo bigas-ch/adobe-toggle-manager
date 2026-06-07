@@ -7,8 +7,8 @@ Adobe Toggle Manager keeps Adobe Creative Cloud's background components
 crash/telemetry reporters, and Finder/QuickLook plugin extensions that launch at
 login and run even when no Adobe app is open. It blocks them **at the source**
 and keeps them blocked, even after an Adobe update tries to re-enable them. You
-can flip between **Block** and **Allow** at any time; your choice survives reboot
-and logout.
+can flip between **Block**, **Lean**, and **Allow** at any time; your choice
+survives reboot and logout.
 
 It changes nothing about Adobe's licensing or your files — it only manages
 **auto-start and background services** of Adobe software you have legitimately
@@ -54,12 +54,13 @@ You'll see a status box (current state, daemon PID, how many components are
 discovered/disabled, last event) and this menu:
 
 ```
-[a] Allow   [b] Block   [d] Discovery   [s] Stats   [u] Sudo-Sweep   [e] Sudo-Unsweep   [w] Whitelist   [q] Exit
+[a] Allow   [b] Block   [l] Lean   [d] Discovery   [s] Stats   [u] Sudo-Sweep   [e] Sudo-Unsweep   [w] Whitelist   [q] Exit
 ```
 
 | Key | What it does |
 |-----|--------------|
 | **`b` Block** | Disable all Adobe background components and keep them disabled. |
+| **`l` Lean** | Disable only Adobe *bloat* (background helpers, telemetry, the auto-updater) but keep the essentials, so your Adobe apps still launch and stay licensed — a fast, quiet Adobe without the always-on swarm. Best for paying full-version users. |
 | **`a` Allow** | Re-enable them (Adobe can run normally again). |
 | **`d` Discovery** | Show every Adobe component the daemon currently sees. |
 | **`s` Stats** | Show recent activity / counters. |

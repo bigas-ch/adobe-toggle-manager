@@ -19,8 +19,8 @@
 Adobe Toggle Manager blocks Adobe Creative Cloud background processes,
 LaunchAgents/LaunchDaemons, and Finder/QuickLook plugin extensions, and
 holds them blocked. A lightweight terminal UI lets you flip between
-**Block** and **Allow** at any time. Your choice persists across reboot
-and logout.
+**Block**, **Lean**, and **Allow** at any time. Your choice persists across
+reboot and logout.
 
 ## Why
 
@@ -50,6 +50,13 @@ Adobe Toggle Manager solves it at the root:
 
 - **Block** — stops all running Adobe processes, disables all Adobe
   LaunchAgents and pluginkit extensions, and prevents new auto-starts.
+- **Lean** — stops only curated Adobe *bloat* (background helpers such as
+  CCXProcess, Core Sync, crash/telemetry reporters, and the auto-updater)
+  while keeping the essentials a licensed app needs to launch and stay
+  licensed. A middle ground between Block and Allow, aimed at paying users
+  who want a fast, quiet Adobe without the always-on swarm. Conservative by
+  design: only curated components are stopped, so unknown/new components keep
+  running and a licensed app never breaks.
 - **Allow** — re-enables previously disabled components; optional
   auto-start for Creative Cloud.
 - **Granular whitelist** — a key in the TUI opens an `fzf` multi-select
@@ -148,7 +155,7 @@ and are not meant to be run by hand.
 ### TUI
 
 ```
-[a] Allow   [b] Block   [d] Discovery   [s] Stats   [u] Sudo-Sweep   [e] Sudo-Unsweep   [w] Whitelist   [q] Exit
+[a] Allow   [b] Block   [l] Lean   [d] Discovery   [s] Stats   [u] Sudo-Sweep   [e] Sudo-Unsweep   [w] Whitelist   [q] Exit
 ```
 
 - `[b]` Block / `[a]` Allow flip the global state. When there is system-scope
@@ -156,6 +163,11 @@ and are not meant to be run by hand.
   (after Allow) runs automatically right after the toggle — a single Touch ID
   prompt, and only when something actually needs it. Turn this off with
   `config set auto-sudo-sweep false`.
+- `[l]` Lean sets the global state to `lean`: the daemon disables only curated
+  Adobe bloat and re-enables everything else, so apps still launch and stay
+  licensed. Whitelisted (`user_allowed`) components are always spared, and a
+  component you explicitly blocked stays off. System-scope bloat is left to the
+  explicit `[u]` sweep (no auto-chain in lean).
 - `[d]` Discovery shows every Adobe component the daemon currently sees.
 - `[u]` Sudo-Sweep manually (re-)runs the system-scope LaunchDaemon sweep —
   the fallback when auto-sweep is disabled, or to run it again (authenticated
@@ -274,7 +286,8 @@ The **public API** — the surface that version numbers make promises about — 
   `health`, `config`) and flags (`--tui`, `--daemon`, `--json`, `--version`);
 - the `config` keys and their accepted value domains;
 - process **exit codes**;
-- the `--json` output schema of `status`, `discovery`, and `summary`.
+- the `--json` output schema of `status`, `discovery`, and `summary`, including
+  the global **state** value domain (`block`, `lean`, `allow`).
 
 Internal library modules (`lib/`), log formats, on-disk state files, and TUI key
 bindings are **not** part of the public API and may change in any release.

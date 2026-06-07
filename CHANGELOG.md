@@ -8,6 +8,18 @@ See the README's "Versioning" section for the declared public API.
 
 ## [Unreleased]
 
+### Added
+- **Lean** — a third global state (`block` | `lean` | `allow`) that disables
+  only curated Adobe *bloat* (CCXProcess, Core Sync, crash/telemetry reporters,
+  the auto-updater, Adobe Genuine, …) while keeping the essentials a licensed
+  app needs to launch and stay licensed. Reuses the existing per-component
+  whitelist: `user_allowed` components are always spared, `user_blocked` ones
+  are always stopped. Surfaced as TUI key `[l]`, daemon state `lean`, and
+  `"state":"lean"` in the `--json` output. Conservative by design — unknown or
+  new components keep running, so a licensed app never breaks. The bloat list
+  (`ATM_BLOAT_PATTERNS` in `lib/bloat.zsh`) is curated and may grow in future
+  releases.
+
 ## [1.0.0] - 2026-06-07
 
 First public release. Adobe Toggle Manager matured internally through a 4.x

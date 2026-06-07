@@ -57,6 +57,17 @@ assert d['state'] == 'allow'
 "
 }
 
+@test "lean (v1.1.0): status --json reflects state=lean (passthrough)" {
+    echo "lean" > "$ATM_BASE/state"
+    run _run_script "status --json"
+    [ "$status" -eq 0 ]
+    echo "$output" | /usr/bin/python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+assert d['state'] == 'lean', d['state']
+"
+}
+
 @test "status --json: healthy=false in sandbox (no live daemon)" {
     # The sandbox mock launchctl returns pid=12345 (default stub output).
     # That PID does not exist in the test process tree → kill -0 fails.
