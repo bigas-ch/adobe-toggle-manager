@@ -62,6 +62,15 @@ teardown() { sandbox_teardown; }
     [[ "$output" == "block" ]]
 }
 
+@test "tui (v1.1.0): _render_with_blink stashes the message, no blocking blink loop" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1
+        _render_with_blink 'hello lean'
+        print -- \"msg=\$_TUI_ACTION_MSG\"
+    "
+    [[ "$output" == *"msg=hello lean"* ]]
+}
+
 @test "lean (v1.1.0): _tui_action_l writes state=lean" {
     run zsh -c "
         source '$SCRIPT' >/dev/null 2>&1
@@ -118,6 +127,43 @@ teardown() { sandbox_teardown; }
 }
 
 # === _tui_action_d — discovery ================================================
+
+@test "discovery view (v1.1.0): lists launchd + processes with both groups" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        printf 'launchd\tcom.adobe.ccxprocess\t/p1\tgui\n' >  \"\$ATM_DISCOVERED_FILE\"
+        printf 'launchd\tcom.adobe.AdobeCreativeCloud\t/p2\tgui\n' >> \"\$ATM_DISCOVERED_FILE\"
+        printf 'process\tcom.adobe.accmac\tpid:1\t/x/Core Sync.app/Contents/MacOS/Core Sync\n' >> \"\$ATM_DISCOVERED_FILE\"
+        _discovery_classified_lines
+    "
+    [[ "$output" == *"LaunchAgents"* && "$output" == *"Processes"* \
+       && "$output" == *"ccxprocess"* && "$output" == *"AdobeCreativeCloud"* && "$output" == *"Core Sync"* ]]
+}
+
+@test "discovery view (v1.1.0): bloat gets the bloat marker, essential gets essential" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        printf 'launchd\tcom.adobe.ccxprocess\t/p1\tgui\n' >  \"\$ATM_DISCOVERED_FILE\"
+        printf 'launchd\tcom.adobe.AdobeCreativeCloud\t/p2\tgui\n' >> \"\$ATM_DISCOVERED_FILE\"
+        _discovery_classified_lines
+    "
+    # the ccxprocess line must be marked Bloat; the CC line must be marked Essential
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        printf 'launchd\tcom.adobe.ccxprocess\t/p1\tgui\n' >  \"\$ATM_DISCOVERED_FILE\"
+        printf 'launchd\tcom.adobe.AdobeCreativeCloud\t/p2\tgui\n' >> \"\$ATM_DISCOVERED_FILE\"
+        _discovery_classified_lines | grep ccxprocess
+    "
+    bloatline="$output"
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1; init_state
+        printf 'launchd\tcom.adobe.ccxprocess\t/p1\tgui\n' >  \"\$ATM_DISCOVERED_FILE\"
+        printf 'launchd\tcom.adobe.AdobeCreativeCloud\t/p2\tgui\n' >> \"\$ATM_DISCOVERED_FILE\"
+        _discovery_classified_lines | grep AdobeCreativeCloud
+    "
+    essline="$output"
+    [[ "$bloatline" == *"Bloat"* && "$essline" == *"Essential"* ]]
+}
 
 @test "PD-02: _tui_action_d calls discovery_sweep + shows component count" {
     run zsh -c "

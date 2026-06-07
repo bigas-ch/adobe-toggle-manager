@@ -290,45 +290,14 @@ _render_drift_section() {
     done
 }
 
-# Blinks ONLY the status line (terminal row 6 of the right box) — the rest of
-# the terminal content stays put. 10 seconds, 2 Hz (250 ms toggle, 40 frames).
-# Drift event lines 7+8 are cleared during the blink; after 10 s the
-# drift events block is brought back via _render_drift_section.
+# Action feedback (v1.1.0): NON-BLOCKING. The old 40-frame × 250 ms blink loop
+# blocked input for 10 s after every action ("hält nur auf"). Now this only
+# STASHES the message into _TUI_ACTION_MSG; tui_menu_loop renders the drift
+# section + overlays this message on the Live-Activity box (row 6) after each
+# full render, where it persists until the next action — so the menu accepts the
+# next key immediately. Name kept so the ~15 call sites stay unchanged.
 _render_with_blink() {
-    local msg="$1"
-    # Only save the cursor position — the cursor is already hidden via tui_main;
-    # we do NOT make it visible again at the end, so it stays gone for the whole
-    # TUI lifetime. _tui_cleanup shows it on exit.
-    printf '\033[s'
-
-    # Clear the drift events area (lines 7+8) so the status stands alone
-    _render_right_box_line 7 ""
-    _render_right_box_line 8 ""
-
-    # Blink loop: 40 frames × 250 ms — alternates line 6 between msg and empty
-    # Heartbeat update every 4 frames (= 1 s) for a live display during the blink
-    # Gradient border tick per frame (4 Hz)
-    local i cur_state
-    for (( i=0; i<40; i++ )); do
-        if (( i % 2 == 0 )); then
-            _render_right_box_line 6 "$msg"
-        else
-            _render_right_box_line 6 ""
-        fi
-        cur_state=$(read_state)
-        _gradient_tick "$cur_state"
-        (( i % 4 == 0 )) && _render_heartbeat_line
-        /bin/sleep 0.25
-    done
-
-    # After the blink: bring the drift events block back (static)
-    _render_drift_section
-
-    # Restore the cursor to the saved position — do NOT make it visible again
-    # (tui_main hid it for the whole TUI; _tui_cleanup shows it on
-    # exit). If we set '\033[?25h' here the cursor would come back
-    # and flicker through the TUI on every animation frame.
-    printf '\033[u'
+    typeset -g _TUI_ACTION_MSG="$1"
 }
 
 tui_render_status() {
@@ -518,12 +487,59 @@ _tui_action_l() {
     fi
 }
 
-# _tui_action_d — manual discovery + show the component count.
+# _discovery_classified_lines — emit discovered Adobe components grouped by type
+# (LaunchAgents/Daemons + processes), each tagged with its lean classification
+# (🅑 Bloat / 🅔 Essential). Read-only, one line per component; used by [d].
+_discovery_classified_lines() {
+    local _type label plist scope ident src binary name l
+    local -a la_lines pr_lines
+    local -i n_la=0 n_pr=0 bloat=0 ess=0
+    while IFS=$'\t' read -r _type label plist scope; do
+        [[ -z "$label" ]] && continue
+        n_la+=1
+        if _is_lean_blocked "$label" "$scope"; then
+            la_lines+=( "    🅑 Bloat      [${scope}] ${label}" ); bloat+=1
+        else
+            la_lines+=( "    🅔 Essential  [${scope}] ${label}" ); ess+=1
+        fi
+    done < <(_read_discovered_by_type launchd)
+    while IFS=$'\t' read -r _type ident src binary; do
+        [[ -z "$ident" ]] && continue
+        n_pr+=1
+        name="${binary:t}"; [[ -z "$name" ]] && name="$ident"
+        if _lean_kill_is_bloat "$ident" "$binary"; then
+            pr_lines+=( "    🅑 Bloat      ${name}  (${ident})" ); bloat+=1
+        else
+            pr_lines+=( "    🅔 Essential  ${name}  (${ident})" ); ess+=1
+        fi
+    done < <(_read_discovered_by_type process)
+    print -r -- "  Adobe components discovered ($(( n_la + n_pr )))"
+    print -r -- ""
+    print -r -- "  LaunchAgents/Daemons (${n_la})"
+    (( n_la == 0 )) && print -r -- "    (none)"
+    for l in "${la_lines[@]}"; do print -r -- "$l"; done
+    print -r -- ""
+    print -r -- "  Processes (${n_pr})"
+    (( n_pr == 0 )) && print -r -- "    (none)"
+    for l in "${pr_lines[@]}"; do print -r -- "$l"; done
+    print -r -- ""
+    print -r -- "  🅑 ${bloat} Bloat · 🅔 ${ess} Essential"
+}
+
+# _tui_action_d — manual discovery + show the classified component list.
+# Mirrors the [w] flow: clear → list → ENTER → restore TUI.
 _tui_action_d() {
     discovery_sweep
+    /usr/bin/clear 2>/dev/null || printf '\033[2J\033[H'
+    _discovery_classified_lines
+    printf "\n  Press ENTER to return to the TUI..."
+    read -r _
+    printf '\033[H\033[J'
+    tui_render_status
+    _tui_render_menu_hint
     local n
     n=$(/usr/bin/wc -l < "$ATM_DISCOVERED_FILE" 2>/dev/null | /usr/bin/tr -d ' ')
-    _render_with_blink "Discovery: ${n:-0} components found."
+    _render_with_blink "Discovery: ${n:-0} components (list shown)."
 }
 
 # _tui_action_s — show the stats summary.
@@ -634,6 +650,12 @@ tui_menu_loop() {
     while true; do
         _tui_full_render "$first_iter"
         first_iter=0
+        # Live-Activity box: render the drift section (rows 6-8), then overlay the
+        # last action message on row 6 if one is pending (non-blocking — replaces
+        # the old 10 s blink). The message persists through the idle wait until the
+        # next action overwrites _TUI_ACTION_MSG.
+        _render_drift_section
+        [[ -n "${_TUI_ACTION_MSG:-}" ]] && _render_right_box_line 6 "$_TUI_ACTION_MSG"
 
         choice=""
         _tui_read_key_with_animation
