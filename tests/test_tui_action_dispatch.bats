@@ -14,10 +14,10 @@ teardown() { sandbox_teardown; }
 
 # === Action functions exist with correct naming ==============================
 
-@test "PD-02: all 6 _tui_action_<key> functions exist (a/b/d/s/u/w)" {
+@test "PD-02: all 7 _tui_action_<key> functions exist (a/b/d/s/u/w/l)" {
     run zsh -c "
         source '$SCRIPT' >/dev/null 2>&1
-        for k in a b d s u w; do
+        for k in a b d s u w l; do
             if (( \${+functions[_tui_action_\$k]} )); then
                 echo \"\$k: ok\"
             else
@@ -32,6 +32,7 @@ teardown() { sandbox_teardown; }
     [[ "$output" == *"s: ok"* ]]
     [[ "$output" == *"u: ok"* ]]
     [[ "$output" == *"w: ok"* ]]
+    [[ "$output" == *"l: ok"* ]]
 }
 
 # === _tui_action_a / _tui_action_b — state-write ==============================
@@ -59,6 +60,18 @@ teardown() { sandbox_teardown; }
         /bin/cat \"\$ATM_STATE_FILE\"
     "
     [[ "$output" == "block" ]]
+}
+
+@test "lean (v1.1.0): _tui_action_l writes state=lean" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1
+        _render_with_blink() { :; }
+        _tui_signal_daemon() { return 1; }
+        _auto_sudo_sweep_enabled() { return 1; }
+        _tui_action_l 2>/dev/null
+        /bin/cat \"\$ATM_STATE_FILE\"
+    "
+    [[ "$output" == "lean" ]]
 }
 
 # === _tui_action_d — discovery ================================================

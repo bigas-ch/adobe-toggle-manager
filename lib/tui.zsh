@@ -120,6 +120,7 @@ _status_lines_for_box() {
     [[ -z "$last_event" ]] && last_event="—"
 
     state_emoji="🔴"
+    [[ "$state" == "lean" ]] && state_emoji="🟡"
     [[ "$state" == "allow" ]] && state_emoji="🟢"
 
     print -r -- "State:       $state_emoji $state"
@@ -379,6 +380,7 @@ _tui_render_menu_hint() {
 
   [a] 🟢 Allow       → release Adobe components
   [b] 🔴 Block       → stop Adobe completely
+  [l] 🟡 Lean        → stop only Adobe bloat, keep apps usable
   [d] Force discovery now
   [s] Statistics / logs
   [u] 🔧 Sudo-Sweep  → disable system LaunchDaemons (sudo)
@@ -481,6 +483,21 @@ _tui_action_b() {
     else
         _render_with_blink "$sig_msg"
     fi
+}
+
+# _tui_action_l — set state to 'lean' (block only curated bloat) + trigger the
+# daemon. No auto-sudo-sweep chain: lean must NOT sweep all system LaunchDaemons
+# (that is full-block behavior); system-scope bloat is handled via the explicit
+# [u] sweep when desired.
+_tui_action_l() {
+    local sig_msg
+    write_state lean
+    if _tui_signal_daemon; then
+        sig_msg="🟡 State 'lean' set — daemon triggered."
+    else
+        sig_msg="🟡 State 'lean' set (daemon not active)."
+    fi
+    _render_with_blink "$sig_msg"
 }
 
 # _tui_action_d — manual discovery + show the component count.
