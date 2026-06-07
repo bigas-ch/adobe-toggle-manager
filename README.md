@@ -121,6 +121,11 @@ The installer compiles the Swift FSEvents helper automatically if the
 Xcode Command Line Tools are present. The daemon runs correctly without it
 (30-second polling fallback).
 
+It also creates a double-clickable **Adobe Toggle.app** in your Applications
+folder (falling back to `~/Applications` if the system folder is not writable)
+that opens the TUI in Terminal — so you can launch the UI without the command
+line. The uninstaller removes it.
+
 The default state after install is `block`. To install without blocking
 Adobe immediately:
 
@@ -158,6 +163,9 @@ and are not meant to be run by hand.
 [a] Allow   [b] Block   [l] Lean   [d] Discovery   [s] Stats   [u] Sudo-Sweep   [e] Sudo-Unsweep   [w] Whitelist   [q] Exit
 ```
 
+Actions apply immediately — the menu never blocks; a short status line confirms
+each action while you keep pressing keys.
+
 - `[b]` Block / `[a]` Allow flip the global state. When there is system-scope
   work that needs elevation, the matching sudo sweep (after Block) or un-sweep
   (after Allow) runs automatically right after the toggle — a single Touch ID
@@ -168,7 +176,9 @@ and are not meant to be run by hand.
   licensed. Whitelisted (`user_allowed`) components are always spared, and a
   component you explicitly blocked stays off. System-scope bloat is left to the
   explicit `[u]` sweep (no auto-chain in lean).
-- `[d]` Discovery shows every Adobe component the daemon currently sees.
+- `[d]` Discovery shows every Adobe component the daemon currently sees, grouped
+  into LaunchAgents/Daemons and processes and tagged 🅑 bloat / 🅔 essential, so
+  you can see exactly what `lean` would stop vs keep. Press ENTER to return.
 - `[u]` Sudo-Sweep manually (re-)runs the system-scope LaunchDaemon sweep —
   the fallback when auto-sweep is disabled, or to run it again (authenticated
   with Touch ID — see Troubleshooting).

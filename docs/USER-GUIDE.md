@@ -50,6 +50,9 @@ Run the tool with no arguments to open the terminal UI:
 ./adobe-toggle
 ```
 
+Or just **double-click `Adobe Toggle.app`** in your Applications folder — the
+installer puts it there, and it opens this UI in Terminal.
+
 You'll see a status box (current state, daemon PID, how many components are
 discovered/disabled, last event) and this menu:
 
@@ -62,7 +65,7 @@ discovered/disabled, last event) and this menu:
 | **`b` Block** | Disable all Adobe background components and keep them disabled. |
 | **`l` Lean** | Disable only Adobe *bloat* (background helpers, telemetry, the auto-updater) but keep the essentials, so your Adobe apps still launch and stay licensed — a fast, quiet Adobe without the always-on swarm. Best for paying full-version users. |
 | **`a` Allow** | Re-enable them (Adobe can run normally again). |
-| **`d` Discovery** | Show every Adobe component the daemon currently sees. |
+| **`d` Discovery** | List every Adobe component the daemon sees — grouped (LaunchAgents/Daemons + processes) and tagged 🅑 bloat / 🅔 essential, so you can see what `lean` stops vs keeps. Press ENTER to return. |
 | **`s` Stats** | Show recent activity / counters. |
 | **`u` Sudo-Sweep** | *Manually* disable the system-level Adobe services (needs Touch ID — see below). Usually automatic; this is the manual fallback. |
 | **`e` Sudo-Unsweep** | *Manually* re-enable the system-level services after Allow. |
