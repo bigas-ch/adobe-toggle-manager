@@ -38,3 +38,6 @@ _uninstall_backup/
 # Legacy version snapshots — not part of the public OSS tree
 # (full history lives in the private dev repo on main)
 _legacy/
+
+# Internal planning / design specs — not part of the public OSS tree
+_release-prep/
