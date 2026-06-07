@@ -1,0 +1,239 @@
+#!/bin/zsh
+# === Adobe Toggle ===
+# Always-On daemon + dynamic Adobe discovery + TUI toggle
+# Version: 1.0.0 (see CHANGELOG.md for the full history)
+# Source: https://github.com/bigas-ch/adobe-toggle-manager
+
+set -u
+emulate -L zsh
+# v4.1.1 SEC-2 fix: 'emulate -L zsh' resets all options to zsh defaults,
+# which CLEARS NO_UNSET (set -u). Re-enable it explicitly here.
+setopt NO_UNSET
+# Propagate pipeline failures (H-3): without PIPE_FAIL, e.g.
+# 'discover_processes | while ...' would silently keep running on a
+# discover failure. setopt PIPE_FAIL = $PIPESTATUS exit code in zsh.
+setopt PIPE_FAIL
+
+# === Security hardening (v4.0.0) ===
+# H-4: PATH set explicitly — prevents hijacking via user-PATH manipulation
+# (e.g. malicious 'awk' / 'grep' / 'find' in the user's zshrc PATH). System
+# binaries only. Order: system standard.
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+
+# umask 0077 → all newly created files/dirs are user-only (0600/0700).
+# This also covers atomic-write tmp files: tmp is created with 0600,
+# 'mv' carries over the permissions, final files are cleanly 0600.
+umask 0077
+
+# === PB-08 (v4.15.0): load zsh builtin modules centrally ===
+# zsh/datetime: $EPOCHSECONDS (instead of /bin/date +%s, saves ~1ms fork per call)
+# zsh/stat:     zstat builtin (instead of /usr/bin/stat, saves ~3ms fork)
+# Both are used heavily in hot paths (daemon tick, cache refresh).
+# Soft fallback: || true prevents a setup abort if the module is missing
+# (libzsh-without-modules exists in theory, all callsites check
+# ${+parameters[EPOCHSECONDS]} and ${+builtins[zstat]} before use).
+zmodload zsh/datetime 2>/dev/null || true
+zmodload zsh/stat 2>/dev/null || true
+
+# === Constants ===
+typeset -g APP_NAME="adobe-toggle"
+typeset -g APP_VERSION="1.0.0"
+typeset -g APP_LABEL="com.user.adobe-toggle.daemon"
+
+# === Test isolation hooks (v4.1.x) ===
+# Let tests mock external binaries WITHOUT weakening L-2 hardening.
+# Defaults stay the hardcoded absolute paths from L-2.
+# ATM_LAUNCHCTL_REAL_DENY=1 = hard guard: blocks every operation against
+# com.adobe.* labels when ATM_LAUNCHCTL_BIN points at the real /bin/launchctl.
+# Prevents tests from accidentally touching real Adobe components.
+typeset -g ATM_LAUNCHCTL_BIN="${ATM_LAUNCHCTL_BIN:-/bin/launchctl}"
+typeset -g ATM_CODESIGN_BIN="${ATM_CODESIGN_BIN:-/usr/bin/codesign}"
+typeset -g ATM_LAUNCHCTL_REAL_DENY="${ATM_LAUNCHCTL_REAL_DENY:-0}"
+# v4.19.2: sudo hook for sudo_sweep_action + sudo_unsweep_action.
+# ATM_SUDO_REAL_DENY=1 + ATM_SUDO_BIN=/usr/bin/sudo → tests cannot
+# accidentally call the real sudo against com.adobe.* (hard guard analogous
+# to ATM_LAUNCHCTL_REAL_DENY). Closes the test coverage gap v4.19.0/v4.19.1.
+typeset -g ATM_SUDO_BIN="${ATM_SUDO_BIN:-/usr/bin/sudo}"
+typeset -g ATM_SUDO_REAL_DENY="${ATM_SUDO_REAL_DENY:-0}"
+# PAM file paths — overridable for tests (Touch-ID-for-sudo detection).
+typeset -g ATM_PAM_SUDO_FILE="${ATM_PAM_SUDO_FILE:-/etc/pam.d/sudo}"
+typeset -g ATM_PAM_SUDO_LOCAL_FILE="${ATM_PAM_SUDO_LOCAL_FILE:-/etc/pam.d/sudo_local}"
+
+_launchctl() {
+    if [[ "$ATM_LAUNCHCTL_REAL_DENY" == "1" && "$ATM_LAUNCHCTL_BIN" == "/bin/launchctl" ]]; then
+        local arg
+        for arg in "$@"; do
+            if [[ "$arg" == *com.adobe.* ]]; then
+                print -u2 -- "FATAL: ATM_LAUNCHCTL_REAL_DENY=1 — refusing real launchctl with com.adobe.*: $arg"
+                return 99
+            fi
+        done
+    fi
+    "$ATM_LAUNCHCTL_BIN" "$@"
+}
+
+# v4.19.2: hard guard analogous to _launchctl. Refuses a real sudo call
+# (ATM_SUDO_BIN unchanged at /usr/bin/sudo + REAL_DENY=1) when an
+# argument contains com.adobe.* or the next argument is /bin/launchctl
+# with an Adobe label. Consumers: sudo_sweep_action, sudo_unsweep_action.
+_sudo() {
+    if [[ "$ATM_SUDO_REAL_DENY" == "1" && "$ATM_SUDO_BIN" == "/usr/bin/sudo" ]]; then
+        local arg
+        for arg in "$@"; do
+            if [[ "$arg" == *com.adobe.* || "$arg" == *Adobe_Genuine* || "$arg" == *ARMDC* ]]; then
+                print -u2 -- "FATAL: ATM_SUDO_REAL_DENY=1 — refusing real sudo with Adobe ref: $arg"
+                return 99
+            fi
+        done
+    fi
+    "$ATM_SUDO_BIN" "$@"
+}
+
+# === Backend system (v4.3.0) ===
+# Plugin architecture: discovery + block/allow for multiple macOS subsystems
+# (launchd, pluginkit, …). Spec: lib/backends/_interface.zsh.
+# Sourcing the registry + backends is soft: if lib files are missing (e.g. after
+# a bad install), the script keeps running in the v4.2.0 fallback (launchd block only).
+typeset -gr ATM_SCRIPT_PATH="${${(%):-%x}:A}"
+typeset -gr ATM_SCRIPT_DIR="${ATM_SCRIPT_PATH:h}"
+typeset -gr ATM_LIB_DIR="${ATM_SCRIPT_DIR}/lib"
+typeset -gi _BACKENDS_AVAILABLE=0
+if [[ -f "$ATM_LIB_DIR/backend_registry.zsh" ]] && \
+   [[ -f "$ATM_LIB_DIR/backends/launchd.zsh" ]] && \
+   [[ -f "$ATM_LIB_DIR/backends/pluginkit.zsh" ]]; then
+    source "$ATM_LIB_DIR/backend_registry.zsh"
+    _BACKENDS_AVAILABLE=1
+fi
+# _init_backends() is defined at the end of the script (after all functions
+# the backends access via delegate) and is called before the source guard.
+
+# Default runtime path — can be overridden via ATM_BASE (tests, alternative installs)
+typeset -g ATM_BASE="${ATM_BASE:-$HOME/Library/Application Support/AdobeToggleManager}"
+typeset -g ATM_STATE_FILE="$ATM_BASE/state"
+typeset -g ATM_DISCOVERED_FILE="$ATM_BASE/discovered.list"
+typeset -g ATM_DISABLED_FILE="$ATM_BASE/disabled.list"
+typeset -g ATM_LOGS_DIR="$ATM_BASE/logs"
+typeset -g ATM_CONFIG_FILE="$ATM_BASE/config"
+typeset -g ATM_LIVE_STATE_FILE="$ATM_BASE/live_state"
+typeset -g ATM_PID_FILE="$ATM_BASE/daemon.pid"
+
+# Log retention (days)
+typeset -g LOG_RETENTION_DAYS=90
+
+# Defaults
+typeset -g DEFAULT_TICK_INTERVAL=30
+typeset -g DEFAULT_SAFETY_TICK_INTERVAL=300
+typeset -g DEFAULT_NOTIFICATIONS="minimal"
+typeset -g DEFAULT_AUTO_START_CC="false"
+typeset -g DEFAULT_AUTO_SUDO_SWEEP="true"
+
+# Adobe detection
+typeset -g ADOBE_AUTHORITY_REGEX='Developer ID Application: Adobe (Inc\.|Systems Incorporated)'
+typeset -g ADOBE_LABEL_PREFIX_REGEX='^com\.adobe'
+
+# Strict label validation (finding C-3): launchd labels from plist content
+# are UNTRUSTED. Must be checked before use in launchctl/disabled.list.
+# Threat model: protection against TSV injection (tab/newline) and length DoS
+# from malformed plist content; not against Adobe identity (that is done by
+# the filename glob com.adobe*.plist in discovery).
+#
+# Adobe uses several label conventions:
+#   - com.adobe.X (modern, common)
+#   - com.adobesystems.X (legacy)
+#   - Adobe_Genuine_Software_Integrity_Service (no com.adobe prefix)
+# → regex allows any ASCII label that starts with a letter.
+typeset -g LAUNCHD_LABEL_REGEX='^[A-Za-z][A-Za-z0-9._-]{0,254}$'
+
+_validate_label() {
+    local label="$1"
+    [[ -z "$label" ]] && return 1
+    [[ "$label" =~ $LAUNCHD_LABEL_REGEX ]] || return 1
+    return 0
+}
+
+# === Logging — extracted into lib/log.zsh (v4.4.0) ===
+[[ -f "$ATM_LIB_DIR/log.zsh" ]] && source "$ATM_LIB_DIR/log.zsh"
+
+
+# === Display-width + box-drawing engine — extracted into lib/box.zsh (v4.4.0) ===
+[[ -f "$ATM_LIB_DIR/box.zsh" ]] && source "$ATM_LIB_DIR/box.zsh"
+
+# === Live-state file (daemon counters + heartbeat) ===
+typeset -gi _DAEMON_TICKS=0
+typeset -gi _DAEMON_DISABLED=0
+typeset -gi _DAEMON_KILLED=0
+typeset -g _DAEMON_LAST_DISABLE=""
+typeset -g _DAEMON_LAST_KILL=""
+# v4.19.0 PHANTOM FIX (C): number of system items that remain in disabled.list
+# because the user-mode daemon cannot enable them. Set once per run in the
+# allow_action pass (not per item, avoids LOG-1 spam) and mirrored via
+# live_state into the TUI status box → user sees the "press [e]" hint.
+typeset -gi _DAEMON_PENDING_SYSTEM=0
+
+# === State + live-state — extracted into lib/state.zsh (v4.4.0) ===
+[[ -f "$ATM_LIB_DIR/state.zsh" ]] && source "$ATM_LIB_DIR/state.zsh"
+
+# === Disabled-list I/O — extracted into lib/disabled_list.zsh (v4.4.0) ===
+[[ -f "$ATM_LIB_DIR/disabled_list.zsh" ]] && source "$ATM_LIB_DIR/disabled_list.zsh"
+
+
+# === Discovery + block/allow actions — extracted into lib/discovery.zsh (v4.4.0) ===
+[[ -f "$ATM_LIB_DIR/discovery.zsh" ]] && source "$ATM_LIB_DIR/discovery.zsh"
+
+# === Config — extracted into lib/config.zsh (v4.4.0) ===
+[[ -f "$ATM_LIB_DIR/config.zsh" ]] && source "$ATM_LIB_DIR/config.zsh"
+
+# === JSON encoder + emit functions (v4.7.0) ===
+[[ -f "$ATM_LIB_DIR/json.zsh" ]] && source "$ATM_LIB_DIR/json.zsh"
+
+# === Whitelist manager (v4.8.0) ===
+[[ -f "$ATM_LIB_DIR/whitelist.zsh" ]] && source "$ATM_LIB_DIR/whitelist.zsh"
+
+# === Dispatch ===
+main() {
+    local mode="${1:---tui}"
+    case "$mode" in
+        --tui|"") tui_main ;;
+        --daemon) daemon_main ;;
+        --healthcheck) shift; healthcheck_main "$@" ;;
+        --summary|--stats) shift 2>/dev/null; summary_main "$@" ;;
+        summary) shift; summary_main "$@" ;;
+        status) shift; status_main "$@" ;;
+        discovery) shift; discovery_main "$@" ;;
+        health) shift; health_main "$@" ;;
+        --version|-V) print -- "$APP_NAME $APP_VERSION"; return 0 ;;
+        --help|-h) help_main ;;
+        config) shift; config_main "$@" ;;
+        *) print -u2 -- "Unknown mode: $mode"; help_main; return 2 ;;
+    esac
+}
+
+
+# === FSEvents watcher (v4.5.0) — extracted into lib/watcher.zsh ===
+# Soft fallback: if the lib or binary is missing, the daemon uses the existing 30-s polling.
+[[ -f "$ATM_LIB_DIR/watcher.zsh" ]] && source "$ATM_LIB_DIR/watcher.zsh"
+
+# === Daemon loop + summary + help — extracted into lib/daemon.zsh (v4.4.0) ===
+[[ -f "$ATM_LIB_DIR/daemon.zsh" ]] && source "$ATM_LIB_DIR/daemon.zsh"
+
+# === Backend registration (v4.3.0) ===
+# Runs immediately after all function defs so that backends
+# (which in turn call disable_launchd_label etc.) are registered
+# before block_action/allow_action are used.
+# Soft fail: if a backend is not conformant, only that one is
+# skipped — the others stay active.
+_init_backends() {
+    (( _BACKENDS_AVAILABLE )) || return 0
+    backend_register launchd "$ATM_LIB_DIR/backends/launchd.zsh" 2>/dev/null \
+        || log_warn "_init_backends: launchd registration failed"
+    backend_register pluginkit "$ATM_LIB_DIR/backends/pluginkit.zsh" 2>/dev/null \
+        || log_warn "_init_backends: pluginkit registration failed"
+}
+_init_backends
+
+# === Source guard ===
+# Only run when started directly, not when sourced (e.g. by bats tests).
+# zsh sets ZSH_EVAL_CONTEXT to "toplevel" on a direct run, "toplevel:file:..." on source.
+if [[ "${ZSH_EVAL_CONTEXT:-}" != *:file ]]; then
+    main "$@"
+fi

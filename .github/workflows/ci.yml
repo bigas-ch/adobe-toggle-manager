@@ -1,0 +1,159 @@
+name: CI (Unit + E2E)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Unit Tests (bats parallel)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bats-core + parallel
+        run: brew install bats-core parallel
+
+      - name: Run unit tests (sequenziell — Source-of-Truth, perf ausgeschlossen)
+        # Absolut-zeit-/perf-Tests sind auf dem geteilten macos-14-Runner flaky
+        # (3-5× langsamer als M3 Max → feste ms-Thresholds reissen). Sie sind via
+        # `# bats file_tags=perf` / `test_tags=perf` markiert und hier ausgeschlossen.
+        run: bats --filter-tags '!perf' tests/
+
+      - name: Run perf tests (nicht-gating — Smoke, Flakes erlaubt)
+        # Perf-Tests laufen weiterhin zur Beobachtung, dürfen aber den Job nicht
+        # rot färben (feste Wall-Clock-Thresholds, geteilter Runner).
+        run: bats --filter-tags 'perf' tests/ || true
+
+      - name: Run unit tests (parallel — speedup-Validation)
+        # Erlaubt parallel-flakes (lib_watcher unter Last) — sequenziell ist authoritativ.
+        # run-tests.sh schliesst unter CI=true automatisch perf-Tests aus.
+        run: ./scripts/run-tests.sh || true
+
+  e2e-tests:
+    name: E2E (Install + Block + Drift + Allow)
+    runs-on: macos-14
+    needs: unit-tests
+    env:
+      WS: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Test-Sandbox
+        # ATM_BASE in temporären Pfad — kein Touch am echten ~/Library
+        run: |
+          ATM_BASE="${RUNNER_TEMP}/atm-e2e-base"
+          mkdir -p "${ATM_BASE}/logs"
+          echo "ATM_BASE=${ATM_BASE}" >> "${GITHUB_ENV}"
+
+      - name: Generate Fake-Adobe-plists (com.adobe.* test-namespace)
+        # Test-Labels mit eigenem Namespace — wird via mock-launchctl gehandhabt,
+        # niemals an echtes /bin/launchctl gegeben (ATM_LAUNCHCTL_REAL_DENY=1).
+        run: |
+          PLIST_DIR="${RUNNER_TEMP}/atm-e2e-launchagents"
+          mkdir -p "${PLIST_DIR}"
+          for i in 1 2 3; do
+            cat > "${PLIST_DIR}/com.adobe.atmtest.fake${i}.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>Label</key>
+            <string>com.adobe.atmtest.fake${i}</string>
+            <key>ProgramArguments</key>
+            <array><string>/usr/bin/true</string></array>
+          </dict>
+          </plist>
+          EOF
+          done
+          echo "PLIST_DIR=${PLIST_DIR}" >> "${GITHUB_ENV}"
+          ls -la "${PLIST_DIR}/"
+
+      - name: E2E — Discovery findet Fake-Adobe-Components
+        env:
+          ATM_LAUNCHCTL_BIN: ${{ github.workspace }}/tests/helpers/mocks/mock_launchctl
+          ATM_CODESIGN_BIN: ${{ github.workspace }}/tests/helpers/mocks/mock_codesign
+          ATM_LAUNCHCTL_REAL_DENY: "1"
+        run: |
+          ATM_MOCK_LOG_DIR="${RUNNER_TEMP}/mock-logs"
+          mkdir -p "${ATM_MOCK_LOG_DIR}"
+          : > "${ATM_MOCK_LOG_DIR}/launchctl.log"
+          : > "${ATM_MOCK_LOG_DIR}/codesign.log"
+          : > "${ATM_MOCK_LOG_DIR}/codesign_db.tsv"
+          export ATM_MOCK_LOG_DIR
+          export ATM_MOCK_CODESIGN_DB="${ATM_MOCK_LOG_DIR}/codesign_db.tsv"
+
+          # PAM-Override (kein Touch ID auf CI-Runner)
+          mkdir -p "${ATM_BASE}/_pam"
+          export ATM_PAM_SUDO_FILE="${ATM_BASE}/_pam/sudo"
+          export ATM_PAM_SUDO_LOCAL_FILE="${ATM_BASE}/_pam/sudo_local"
+          : > "${ATM_PAM_SUDO_FILE}"
+          : > "${ATM_PAM_SUDO_LOCAL_FILE}"
+
+          echo "block" > "${ATM_BASE}/state"
+
+          /bin/zsh -c "
+            source \"${WS}/adobe-toggle\" >/dev/null 2>&1
+            ATM_PLIST_DIRS=( \"${PLIST_DIR}\" )
+            init_state
+            discovery_sweep
+          "
+
+          [ -f "${ATM_BASE}/discovered.list" ] || { echo '❌ discovered.list missing'; exit 1; }
+          for i in 1 2 3; do
+            grep -q "com.adobe.atmtest.fake${i}" "${ATM_BASE}/discovered.list" \
+              || { echo "❌ com.adobe.atmtest.fake${i} not discovered"; cat "${ATM_BASE}/discovered.list"; exit 1; }
+          done
+          echo "✅ Discovery: alle 3 fake-Labels gefunden"
+          cat "${ATM_BASE}/discovered.list"
+
+      - name: E2E — Status --json liefert valid JSON mit state=block
+        run: |
+          "${WS}/adobe-toggle" status --json | python3 -m json.tool > /dev/null
+          state=$("${WS}/adobe-toggle" status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')
+          [ "$state" = "block" ] || { echo "❌ state=$state, expected block"; exit 1; }
+          echo "✅ status --json valid, state=block"
+
+      - name: E2E — discovery --json + summary --json valid
+        run: |
+          count=$("${WS}/adobe-toggle" discovery --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["discovered"]))')
+          [ "$count" -ge 3 ] || { echo "❌ discovery count=$count < 3"; exit 1; }
+          "${WS}/adobe-toggle" summary --json | python3 -m json.tool > /dev/null
+          echo "✅ discovery + summary --json valid (discovered_count=$count)"
+
+      - name: E2E — health-Subcommand
+        run: |
+          # Daemon ist auf CI nicht aktiv → health unhealthy erwartet
+          "${WS}/adobe-toggle" health || true
+          if "${WS}/adobe-toggle" health 2>&1 | grep -qE "unhealthy|healthy"; then
+            echo "✅ health returned valid output"
+          else
+            echo "❌ health output invalid"; exit 1
+          fi
+
+      - name: E2E — Pre-Push-Hook reject feat in PATCH-Tag
+        run: |
+          TMPREPO=$(mktemp -d)
+          cd "${TMPREPO}"
+          git init -q
+          git config user.email "ci@test"
+          git config user.name "CI"
+          git config commit.gpgsign false
+          echo 1 > f && git add f && git commit -qm "chore: init"
+          git tag v1.0.0
+          echo 2 > f && git add f && git commit -qm "feat: bad in patch"
+          git tag v1.0.1
+          sha=$(git rev-parse v1.0.1)
+          if printf 'refs/tags/v1.0.1 %s refs/tags/v1.0.1 0000000000000000000000000000000000000000\n' "$sha" \
+             | "${WS}/scripts/git-hooks/pre-push"; then
+            echo "❌ hook should have rejected feat: in PATCH"; exit 1
+          fi
+          echo "✅ pre-push hook correctly rejected feat: in PATCH-Tag"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf "${RUNNER_TEMP}/atm-e2e-base" "${RUNNER_TEMP}/atm-e2e-launchagents" "${RUNNER_TEMP}/mock-logs" 2>/dev/null || true

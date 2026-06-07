@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Logs / Runtime artefacts
+*.log
+*.out
+*.err
+logs/
+/logs
+_archive-bundle-*.tar.gz
+
+# LaunchAgent / Plist artefacts (host-spezifisch, keine Source-of-Truth)
+*.plist
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Temp
+*.tmp
+*.bak
+.cache/
+
+# Claude Code (local-only settings)
+.claude/settings.local.json
+
+# Notion FS-Mirror (local backup of Notion pages, Notion is source of truth)
+_notion/
+
+# Uninstaller backup artefacts (created by uninstall.sh)
+_uninstall_backup/
+
+# Legacy version snapshots — not part of the public OSS tree
+# (full history lives in the private dev repo on main)
+_legacy/

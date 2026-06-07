@@ -1,0 +1,34 @@
+#!/bin/bash
+# Mock for /usr/bin/pluginkit, used by tests via ATM_PLUGINKIT_BIN.
+#
+# Logs every invocation to $ATM_MOCK_LOG_DIR/pluginkit.log (TSV: argv).
+# Reads $ATM_MOCK_PLUGINKIT_DB to simulate `pluginkit -m -A -v` output.
+# Honors $ATM_MOCK_PLUGINKIT_FAIL=1 → exit 1.
+#
+# Recognized invocations:
+#   pluginkit -m -A -v        → cat $ATM_MOCK_PLUGINKIT_DB (default empty)
+#   pluginkit -e ignore -i X  → log + exit 0
+#   pluginkit -e use -i X     → log + exit 0
+#   anything else             → log + exit 1
+
+set -u
+
+LOG="${ATM_MOCK_LOG_DIR:-/tmp}/pluginkit.log"
+printf '%s\n' "$*" >> "$LOG" 2>/dev/null || true
+
+if [[ "${ATM_MOCK_PLUGINKIT_FAIL:-0}" == "1" ]]; then
+    exit 1
+fi
+
+if [[ "$1" == "-m" && "$2" == "-A" && "$3" == "-v" ]]; then
+    if [[ -n "${ATM_MOCK_PLUGINKIT_DB:-}" && -f "$ATM_MOCK_PLUGINKIT_DB" ]]; then
+        cat "$ATM_MOCK_PLUGINKIT_DB"
+    fi
+    exit 0
+fi
+
+if [[ "$1" == "-e" && ( "$2" == "ignore" || "$2" == "use" ) && "$3" == "-i" && -n "$4" ]]; then
+    exit 0
+fi
+
+exit 1

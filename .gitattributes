@@ -1,0 +1,10 @@
+# Paths excluded from `git archive` (GitHub Release tarballs).
+# These ship via `git clone` but are stripped from the downloadable tarball
+# to keep releases lean and free of dev/PM artefacts.
+_legacy/            export-ignore
+_notion/            export-ignore
+tests/              export-ignore
+_release-prep/      export-ignore
+_uninstall_backup/  export-ignore
+.gitattributes      export-ignore
+.github/            export-ignore

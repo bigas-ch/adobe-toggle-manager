@@ -1,0 +1,4 @@
+# Sandbox tempdirs (created by helpers/sandbox.bash via mktemp -d /tmp/...).
+# Kept here for safety in case a test stages files under tests/sandbox/.
+sandbox/
+*.log.tmp

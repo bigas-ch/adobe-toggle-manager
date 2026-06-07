@@ -1,0 +1,198 @@
+#!/bin/zsh
+# === Adobe Toggle — pre-push git-hook (v4.9.0+) ===
+# Enforces 3 disciplines before a tag push:
+#
+# 1. Semver-Strict (v4.9.0+):
+#    PATCH tags (vX.Y.Z with Z>0) must NOT contain any feat: commits between the
+#    previous and the current tag.
+#
+#    Background: v4.1.1 accidentally contained `feat(scripts): pluginkit-sweep.sh`
+#    in a PATCH tag — a semver violation, found manually + corrected via a
+#    forward-only revert in v4.1.2.
+#
+# 2. Doc-Consistency Hard-Fail (PD-03, v4.15.1+):
+#    Before every semver tag push, tests/test_integration_doc_consistency.bats
+#    must be GREEN. Prevents silent drift like in v4.14.3, where the script-header
+#    version comment stayed at 4.14.2 although APP_VERSION was already 4.14.3
+#    — the test was red, got lost in the suite, only discovered in v4.14.4.
+#
+# 3. Uninstaller co-maintenance (v1.0.0+, 2026-05-04):
+#    If install.sh was changed in prev_tag..tag,
+#    uninstall.sh MUST have been changed as well
+#    (or contain the commit-message trailer "uninstaller: no-op").
+#    Prevents drift between the install/uninstall paths.
+#    Override: ATM_SKIP_PRE_PUSH=1 or commit with "uninstaller: no-op".
+#
+# Stdin format (from git): <local-ref> <local-sha> <remote-ref> <remote-sha>
+# One line per pushed ref.
+#
+# Exit:
+#   0 = all good
+#   1 = at least one check failed → abort push
+#
+# Override: ATM_SKIP_PRE_PUSH=1 git push origin v4.X.Y    (emergencies only)
+
+set -u
+emulate -L zsh
+setopt PIPE_FAIL
+
+if [[ "${ATM_SKIP_PRE_PUSH:-0}" == "1" ]]; then
+    print -u2 -- "⚠️  pre-push hook skipped (ATM_SKIP_PRE_PUSH=1)"
+    exit 0
+fi
+
+typeset -gi violations=0
+
+# Helper: the tag BEFORE the current one (in semver-DESC order).
+# Uses git's --sort=-version:refname (deterministic even when 2 tags
+# were created in the same second, unlike -creatordate).
+# Pre-filters to semver vX.Y.Z (no mix with pre-release tags).
+_previous_tag_before() {
+    local current="$1"
+    git tag --sort=-version:refname \
+        | /usr/bin/grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+        | /usr/bin/awk -v cur="$current" 'BEGIN{found=0} {
+            if (found) { print; exit }
+            if ($0 == cur) found=1
+        }'
+}
+
+# PD-03 (v4.15.1): read stdin once, scan for a semver tag.
+# Doc-consistency tests run once (not per tag) if at least 1 semver tag is present.
+typeset -ga _push_lines=()
+typeset -gi _has_semver_tag=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+    _push_lines+=( "$local_ref $local_sha $remote_ref $remote_sha" )
+    if [[ "$local_ref" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        _has_semver_tag=1
+    fi
+done
+
+# PD-03: doc-consistency hard-fail before every semver tag push
+if (( _has_semver_tag )); then
+    # Determine repo root (script may run via symlink from scripts/git-hooks/ live under
+    # .git/hooks/pre-push — git sets $GIT_DIR or we use pwd as fallback)
+    local repo_root
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || repo_root="$PWD"
+    local doc_test="$repo_root/tests/test_integration_doc_consistency.bats"
+    if [[ -f "$doc_test" ]]; then
+        print -u2 -- "🔍 pre-push: doc-consistency tests (PD-03 hard-fail)..."
+        # ATM_BATS_BIN override for tests (analogous to the ATM_FZF_BIN/ATM_LAUNCHCTL_BIN pattern).
+        # Default: PATH lookup of 'bats'.
+        local bats_bin="${ATM_BATS_BIN:-bats}"
+        if ! ( cd "$repo_root" && "$bats_bin" "$doc_test" ) >&2; then
+            print -u2 -- ""
+            print -u2 -- "❌ doc-consistency tests FAIL — tag push aborted."
+            print -u2 -- "   Common causes:"
+            print -u2 -- "     - script-header version comment differs from APP_VERSION (FINDING I-1)"
+            print -u2 -- "     - README or spec doc out-of-sync with code"
+            print -u2 -- ""
+            print -u2 -- "   Override (emergency): ATM_SKIP_PRE_PUSH=1 git push --tags"
+            exit 1
+        fi
+        print -u2 -- "✅ doc-consistency OK"
+    else
+        print -u2 -- "⚠️  doc-consistency tests not found ($doc_test) — skipping"
+    fi
+fi
+
+# Uninstaller co-maintenance check (v1.0.0+, 2026-05-04)
+# Per semver tag: if the installer was changed, the uninstaller must be changed too.
+for _line in "${_push_lines[@]}"; do
+    local local_ref="${_line%% *}" rest="${_line#* }"
+    [[ "$local_ref" != refs/tags/* ]] && continue
+    local tag="${local_ref#refs/tags/}"
+    [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+
+    local prev_tag
+    prev_tag=$(_previous_tag_before "$tag")
+    [[ -z "$prev_tag" ]] && continue   # First tag — no comparison base
+
+    # Repo root for file-existence check
+    local repo_root
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || repo_root="$PWD"
+    local uninstaller_file="uninstall.sh"
+    # If the uninstaller does not (yet) exist in the repo: skip check (pre-v1.0.0 tags)
+    if [[ ! -f "$repo_root/$uninstaller_file" ]]; then
+        continue
+    fi
+
+    local installer_changed uninstaller_changed
+    installer_changed=$(git diff --name-only "${prev_tag}..${tag}" -- install.sh 2>/dev/null)
+    uninstaller_changed=$(git diff --name-only "${prev_tag}..${tag}" -- "$uninstaller_file" 2>/dev/null)
+
+    if [[ -n "$installer_changed" && -z "$uninstaller_changed" ]]; then
+        # Escape-hatch: commit-message-trailer "uninstaller: no-op"
+        local has_trailer
+        has_trailer=$(git log "${prev_tag}..${tag}" --grep='uninstaller:[[:space:]]*no-op' --format='%H' 2>/dev/null)
+        if [[ -n "$has_trailer" ]]; then
+            print -u2 -- "ℹ uninstaller co-maintenance: installer changed in $tag, uninstaller bump skipped (commit-trailer 'uninstaller: no-op')"
+            continue
+        fi
+        print -u2 -- ""
+        print -u2 -- "❌ Uninstaller co-maintenance violation in tag $tag (predecessor: $prev_tag)"
+        print -u2 -- "   install.sh was changed, but uninstall.sh was NOT."
+        print -u2 -- ""
+        print -u2 -- "   Possible causes:"
+        print -u2 -- "     - New file/path created under \$APP_SUPPORT? → uninstaller must remove it too"
+        print -u2 -- "     - New LaunchAgent added? → uninstaller needs a second bootout entry"
+        print -u2 -- "     - New symlink in the source repo? → uninstaller must clean it up too"
+        print -u2 -- ""
+        print -u2 -- "   Fix:"
+        print -u2 -- "     A) Adjust the uninstaller (check the drift tests in test_integration_uninstaller.bats)"
+        print -u2 -- "     B) If the installer change really is not uninstaller-relevant (e.g. logging-only):"
+        print -u2 -- "        add commit-trailer 'uninstaller: no-op' to the commit"
+        print -u2 -- ""
+        print -u2 -- "   Override (emergency): ATM_SKIP_PRE_PUSH=1 git push origin $tag"
+        violations=$(( violations + 1 ))
+    fi
+done
+
+# Semver-Strict-Check (existing, pro Tag)
+for _line in "${_push_lines[@]}"; do
+    local local_ref="${_line%% *}" rest="${_line#* }"
+    local local_sha="${rest%% *}"; rest="${rest#* }"
+    local remote_ref="${rest%% *}"; rest="${rest#* }"
+    local remote_sha="$rest"
+
+    # Only check tag pushes
+    [[ "$local_ref" != refs/tags/* ]] && continue
+    local tag="${local_ref#refs/tags/}"
+    # Only semver vX.Y.Z (no vX.Y, no -rc/beta suffix)
+    if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+        continue
+    fi
+    local major="$match[1]" minor="$match[2]" patch="$match[3]"
+    # MINOR/MAJOR (Z=0): feat: allowed → no check
+    if (( patch == 0 )); then
+        continue
+    fi
+    # PATCH (Z>0): NO feat: allowed since the previous tag
+    local prev_tag
+    prev_tag=$(_previous_tag_before "$tag")
+    if [[ -z "$prev_tag" ]]; then
+        # Very first tag — no comparison base
+        continue
+    fi
+    # Range: prev_tag..tag — count feat: commits
+    local feat_commits
+    feat_commits=$(git log "${prev_tag}..${tag}" --grep='^feat' --format='%h %s' 2>/dev/null)
+    if [[ -n "$feat_commits" ]]; then
+        print -u2 -- ""
+        print -u2 -- "❌ semver violation in PATCH tag $tag (predecessor: $prev_tag)"
+        print -u2 -- "   feat: commit(s) do not belong in a PATCH (semver-MINOR character):"
+        print -u2 -- "$feat_commits" | /usr/bin/sed 's/^/     /'
+        print -u2 -- ""
+        print -u2 -- "   Fix options:"
+        print -u2 -- "     A) Delete the tag + re-tag as MINOR (vX.$((minor+1)).0)"
+        print -u2 -- "     B) Forward-only: revert the feat commit + new PATCH tag (pattern v4.1.2)"
+        print -u2 -- ""
+        print -u2 -- "   Override (emergency): ATM_SKIP_PRE_PUSH=1 git push origin $tag"
+        violations=$(( violations + 1 ))
+    fi
+done
+
+if (( violations > 0 )); then
+    exit 1
+fi
+exit 0

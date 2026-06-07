@@ -1,0 +1,48 @@
+#!/bin/bash
+# Mock for atm-watcher (Swift FSEvents-Helper).
+# Logs every invocation to $ATM_MOCK_LOG_DIR/atm_watcher.log.
+# By default: just sleeps until killed (simulates idle watcher).
+# With ATM_MOCK_WATCHER_USR1_AFTER=<seconds>: sends SIGUSR1 to daemon-pid
+# after the given delay (simulates an FS event).
+#
+# argv: <daemon-pid> <path1>:<path2>:...
+
+set -u
+
+LOG="${ATM_MOCK_LOG_DIR:-/tmp}/atm_watcher.log"
+printf 'invoked: %s\n' "$*" >> "$LOG" 2>/dev/null || true
+
+if [[ "${ATM_MOCK_WATCHER_FAIL:-0}" == "1" ]]; then
+    echo "mock_atm_watcher: simulated immediate failure" >&2
+    exit 3
+fi
+
+DAEMON_PID="${1:-}"
+[[ -z "$DAEMON_PID" ]] && exit 2
+
+# Setup signal handler for clean shutdown
+trap 'echo "shutdown" >> "$LOG"; exit 0' TERM INT
+
+# Optional: send SIGUSR1 to daemon after delay
+if [[ -n "${ATM_MOCK_WATCHER_USR1_AFTER:-}" ]]; then
+    (
+        sleep "$ATM_MOCK_WATCHER_USR1_AFTER"
+        kill -USR1 "$DAEMON_PID" 2>/dev/null
+        echo "sent USR1 to $DAEMON_PID" >> "$LOG"
+    ) &
+fi
+
+# Auto-exit after 30s as safety-net (test-only — real watcher loops forever).
+# This prevents orphan mock-watchers from blocking bats teardown if a test
+# forgets to kill us.
+SAFETY_TIMEOUT="${ATM_MOCK_WATCHER_TIMEOUT:-30}"
+
+# Loop with short sleeps so SIGTERM is delivered promptly (long sleeps may
+# delay signal-handling).
+SECONDS_LEFT=$SAFETY_TIMEOUT
+while (( SECONDS_LEFT > 0 )); do
+    sleep 1
+    SECONDS_LEFT=$(( SECONDS_LEFT - 1 ))
+done
+echo "safety-timeout-exit" >> "$LOG"
+exit 0

@@ -1,0 +1,5 @@
+# Build outputs — installer compiles per-machine
+atm-watcher
+atm-watcher-arm64
+atm-watcher-x86_64
+*.dSYM

@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a problem with Adobe Toggle Manager
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill in the
+        fields below so we can reproduce the issue. Do **not** report
+        security vulnerabilities here — use the Security tab instead
+        (see SECURITY.md).
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: "Run `sw_vers -productVersion` and paste the result."
+      placeholder: "14.5"
+    validations:
+      required: true
+  - type: textarea
+    id: status-json
+    attributes:
+      label: Output of status --json
+      description: "Run `./adobe-toggle status --json` and paste the full output."
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands or actions that trigger the bug.
+      placeholder: |
+        1. Run ...
+        2. ...
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: "Logs from ~/Library/Application Support/AdobeToggleManager/logs (optional)."
+      render: shell
+    validations:
+      required: false

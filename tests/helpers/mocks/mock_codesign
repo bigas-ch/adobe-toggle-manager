@@ -1,0 +1,76 @@
+#!/bin/zsh
+# Mock codesign for Adobe Toggle tests.
+# Looks up the requested binary in $ATM_MOCK_CODESIGN_DB (TSV: binary\tauthority).
+# Emits a stderr block matching real `codesign -dvv` output, including
+# Authority=<auth>, Identifier=<basename>, Executable=<binary>.
+#
+# Env knobs:
+#   ATM_MOCK_CODESIGN_DB        TSV file: binary_path \t authority_string
+#   ATM_MOCK_CODESIGN_FAIL=1    Force exit 1 (simulates "not signed")
+#
+# Default if binary not in DB: exit 1, stderr "code object is not signed at all"
+
+set -u
+emulate -L zsh
+
+LOG="${ATM_MOCK_LOG_DIR:-/tmp}/codesign.log"
+
+# Log invocation
+print -- "${(j:\t:)@}" >> "$LOG"
+
+if [[ "${ATM_MOCK_CODESIGN_FAIL:-0}" == "1" ]]; then
+    print -u2 -- "code object is not signed at all"
+    exit 1
+fi
+
+# Parse out the binary path (last positional arg, after -dvv flags)
+local binary=""
+for arg in "$@"; do
+    case "$arg" in
+        -*) ;;
+        *) binary="$arg" ;;
+    esac
+done
+
+if [[ -z "$binary" ]]; then
+    print -u2 -- "codesign: missing argument"
+    exit 1
+fi
+
+# Look up in DB
+local db="${ATM_MOCK_CODESIGN_DB:-}"
+local authority=""
+if [[ -n "$db" && -f "$db" ]]; then
+    while IFS=$'\t' read -r db_binary db_auth; do
+        if [[ "$db_binary" == "$binary" ]]; then
+            authority="$db_auth"
+            break
+        fi
+    done < "$db"
+fi
+
+if [[ -z "$authority" ]]; then
+    print -u2 -- "${binary}: code object is not signed at all"
+    exit 1
+fi
+
+# Real codesign emits this block on stderr (which the script captures via 2>&1)
+local id="${binary:t}"
+{
+    print -- "Executable=${binary}"
+    print -- "Identifier=${id}"
+    print -- "Format=Mach-O thin (arm64)"
+    print -- "CodeDirectory v=20500 size=999"
+    print -- "Hash type=sha256 size=32"
+    print -- "Signature size=8978"
+    print -- "Authority=${authority}"
+    print -- "Authority=Apple Code Signing Certification Authority"
+    print -- "Authority=Apple Root CA"
+    print -- "Timestamp=Jan 1, 2026 at 12:00:00 PM"
+    print -- "Info.plist=not bound"
+    print -- "TeamIdentifier=JQ525L2MZD"
+    print -- "Sealed Resources=none"
+    print -- "Internal requirements count=1 size=72"
+} >&2
+
+exit 0

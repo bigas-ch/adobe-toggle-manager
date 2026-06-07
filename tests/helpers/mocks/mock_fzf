@@ -1,0 +1,31 @@
+#!/bin/bash
+# Mock fzf für whitelist_main-Smoke-Tests.
+# Liest stdin (= die fzf-Lines), gibt entweder die erste Zeile zurück
+# (default) oder eine vorgegebene Auswahl via env-var.
+#
+# Env knobs:
+#   ATM_MOCK_FZF_SELECT="<text>"   gibt diesen Text als "selected" zurück
+#                                  (kann mehrzeilig sein für multi-select)
+#   ATM_MOCK_FZF_CANCEL=1          simuliert User-ESC (exit 130, kein output)
+#   ATM_MOCK_FZF_LOG=<file>        loggt jede Invokation hierhin
+
+set -u
+
+LOG="${ATM_MOCK_FZF_LOG:-/dev/null}"
+printf 'invoked: %s\n' "$*" >> "$LOG" 2>/dev/null || true
+
+# Stdin in Variable einlesen (verbraucht den Pipe)
+INPUT=$(/bin/cat)
+echo "stdin-lines: $(echo "$INPUT" | wc -l | tr -d ' ')" >> "$LOG" 2>/dev/null || true
+
+if [[ "${ATM_MOCK_FZF_CANCEL:-0}" == "1" ]]; then
+    exit 130   # fzf exit-code bei ESC/Ctrl-C
+fi
+
+if [[ -n "${ATM_MOCK_FZF_SELECT:-}" ]]; then
+    printf '%s\n' "$ATM_MOCK_FZF_SELECT"
+else
+    # Default: erste Zeile selected
+    echo "$INPUT" | /usr/bin/head -1
+fi
+exit 0

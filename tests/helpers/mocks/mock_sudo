@@ -1,0 +1,61 @@
+#!/bin/zsh
+# === mock_sudo — Test-Double für /usr/bin/sudo ===
+# Simuliert sudo ohne tatsächliche Privilegien-Eskalation. Verhalten:
+#   sudo -v          → exit 0 (cred-cache "ok")
+#   sudo -k          → exit 0 (cache-clear no-op)
+#   sudo -n true     → exit 0 wenn ATM_MOCK_SUDO_NOPASSWD=1, sonst exit 1
+#   sudo <cmd> ...   → delegiert an <cmd> mit den restlichen args (führt das echte Mock-Tool aus)
+#
+# Loggt jeden Aufruf nach $ATM_MOCK_LOG_DIR/sudo.log (TSV: arg1\targ2\t...).
+# Setze ATM_MOCK_SUDO_FAIL=1 zum simulieren von sudo -v Auth-Fehlern.
+
+setopt NO_UNSET PIPE_FAIL
+
+# Log-Verzeichnis ist Pflicht (sandbox_setup hat es exportiert).
+[[ -n "${ATM_MOCK_LOG_DIR:-}" ]] || { print -u2 "mock_sudo: ATM_MOCK_LOG_DIR not set"; exit 2; }
+
+# Args TSV-loggen (einfache Form; Newlines in Args werden nicht erwartet).
+typeset -a args=( "$@" )
+print -- "${(j:\t:)args}" >> "$ATM_MOCK_LOG_DIR/sudo.log"
+
+# Optional: Auth-Fehler simulieren
+if [[ "${ATM_MOCK_SUDO_FAIL:-0}" == "1" ]]; then
+    print -u2 -- "Sorry, try again."
+    exit 1
+fi
+
+# Modus-Detection
+case "${1:-}" in
+    -v)
+        # sudo -v: validiert/refresht creds. Mock: immer ok.
+        exit 0
+        ;;
+    -k)
+        # sudo -k: clear creds. Mock: no-op.
+        exit 0
+        ;;
+    -n)
+        # sudo -n <cmd>: non-interactive. Mock: ok wenn NOPASSWD-Flag.
+        if [[ "${ATM_MOCK_SUDO_NOPASSWD:-0}" == "1" ]]; then
+            shift  # remove -n
+            [[ $# -eq 0 ]] && exit 0
+            "$@"
+            exit $?
+        else
+            print -u2 -- "sudo: a password is required"
+            exit 1
+        fi
+        ;;
+    "")
+        # Plain "sudo" — das ist im Mock-Kontext eh nicht gewollt.
+        print -u2 -- "mock_sudo: no command given"
+        exit 1
+        ;;
+    *)
+        # Default: delegiere an cmd mit restlichen args. Damit kann
+        # `sudo /path/to/mock_launchctl enable system/foo` durchpipen zu
+        # `/path/to/mock_launchctl enable system/foo` ohne echten sudo.
+        "$@"
+        exit $?
+        ;;
+esac

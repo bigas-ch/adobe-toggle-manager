@@ -1,0 +1,44 @@
+#!/bin/zsh
+# Mock launchctl for Adobe Toggle tests.
+# Logs every invocation to $ATM_MOCK_LOG_DIR/launchctl.log (TSV: subcmd\targs...).
+# Default behavior: exit 0 (success). Override via env vars below.
+#
+# Env knobs:
+#   ATM_MOCK_LAUNCHCTL_FAIL=1                 Force exit 1 for all calls
+#   ATM_MOCK_LAUNCHCTL_FAIL_SUBCMD=disable    Force exit 1 only for this subcmd
+#   ATM_MOCK_LAUNCHCTL_PRINT_OUT=<text>       Stdout for 'print' subcmd
+#
+# This is a HARMLESS stub — it never touches the real /bin/launchctl.
+
+set -u
+emulate -L zsh
+
+LOG="${ATM_MOCK_LOG_DIR:-/tmp}/launchctl.log"
+
+# Tab-separated log line: subcmd \t arg1 \t arg2 ...
+# First field always the sub-command for grep-friendly assertions.
+print -- "${(j:\t:)@}" >> "$LOG"
+
+if [[ "${ATM_MOCK_LAUNCHCTL_FAIL:-0}" == "1" ]]; then
+    exit 1
+fi
+
+if [[ -n "${ATM_MOCK_LAUNCHCTL_FAIL_SUBCMD:-}" && "${1:-}" == "${ATM_MOCK_LAUNCHCTL_FAIL_SUBCMD}" ]]; then
+    exit 1
+fi
+
+case "${1:-}" in
+    print)
+        if [[ -n "${ATM_MOCK_LAUNCHCTL_PRINT_OUT:-}" ]]; then
+            print -- "${ATM_MOCK_LAUNCHCTL_PRINT_OUT}"
+        else
+            # Default: emit a minimal print block resembling real launchctl
+            print "{"
+            print "    pid = 12345"
+            print "    state = running"
+            print "}"
+        fi
+        ;;
+esac
+
+exit 0
