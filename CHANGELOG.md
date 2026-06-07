@@ -8,17 +8,31 @@ See the README's "Versioning" section for the declared public API.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-07
+
 ### Added
 - **Lean** — a third global state (`block` | `lean` | `allow`) that disables
   only curated Adobe *bloat* (CCXProcess, Core Sync, crash/telemetry reporters,
-  the auto-updater, Adobe Genuine, …) while keeping the essentials a licensed
-  app needs to launch and stay licensed. Reuses the existing per-component
-  whitelist: `user_allowed` components are always spared, `user_blocked` ones
-  are always stopped. Surfaced as TUI key `[l]`, daemon state `lean`, and
-  `"state":"lean"` in the `--json` output. Conservative by design — unknown or
-  new components keep running, so a licensed app never breaks. The bloat list
-  (`ATM_BLOAT_PATTERNS` in `lib/bloat.zsh`) is curated and may grow in future
-  releases.
+  the ARMDC auto-updater, Adobe Genuine + the GC client, …) while keeping the
+  essentials a licensed app needs to launch and stay licensed. Reuses the
+  existing per-component whitelist: `user_allowed` components are always spared,
+  `user_blocked` ones are always stopped. Surfaced as TUI key `[l]`, daemon
+  state `lean`, and `"state":"lean"` in the `--json` output. Conservative by
+  design — unknown or new components keep running, so a licensed app never
+  breaks. The bloat list (`ATM_BLOAT_PATTERNS` in `lib/bloat.zsh`) is curated
+  and may grow in future releases.
+- **Classified discovery view** — pressing `[d]` (Discovery) now lists every
+  detected Adobe component, grouped into LaunchAgents/Daemons and processes and
+  tagged 🅑 bloat / 🅔 essential, instead of only showing a count.
+- **Applications launcher** — the installer creates a double-clickable
+  `Adobe Toggle.app` in the Applications folder (falls back to `~/Applications`
+  when the system folder is not writable) that opens the TUI in Terminal. A
+  custom icon is applied when one is present. The uninstaller removes it.
+
+### Changed
+- **Non-blocking TUI feedback** — action confirmations no longer freeze the menu
+  for ~10 seconds; the status message persists unobtrusively and the next key is
+  accepted immediately.
 
 ## [1.0.0] - 2026-06-07
 

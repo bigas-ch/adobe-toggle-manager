@@ -1,7 +1,7 @@
 #!/bin/zsh
 # === Adobe Toggle ===
 # Always-On daemon + dynamic Adobe discovery + TUI toggle
-# Version: 1.0.0 (see CHANGELOG.md for the full history)
+# Version: 1.1.0 (see CHANGELOG.md for the full history)
 # Source: https://github.com/bigas-ch/adobe-toggle-manager
 
 set -u
@@ -37,7 +37,7 @@ zmodload zsh/stat 2>/dev/null || true
 
 # === Constants ===
 typeset -g APP_NAME="adobe-toggle"
-typeset -g APP_VERSION="1.0.0"
+typeset -g APP_VERSION="1.1.0"
 typeset -g APP_LABEL="com.user.adobe-toggle.daemon"
 
 # === Test isolation hooks (v4.1.x) ===

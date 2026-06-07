@@ -1,5 +1,5 @@
 #!/bin/zsh
-# === Adobe Toggle v4 — Uninstaller ===
+# === Adobe Toggle — Uninstaller ===
 # Version: 1.1.0 (MINOR — phase_release_adobe now performs the sudo unsweep
 # itself for leftover system-scope entries in disabled.list (previously: only
 # a WARN hint to the user with a WRONG TUI reference to [u] instead of [e]). The
@@ -462,7 +462,7 @@ phase_summary() {
 
 # === Orchestrator =======================================================
 main() {
-    print "Adobe Toggle v4 Uninstaller"
+    print "Adobe Toggle Uninstaller"
     print "App-Support:    $APP_SUPPORT"
     print "LaunchAgents:   $PLIST_PATH"
     print "                $HEALTHCHECK_PLIST_PATH"

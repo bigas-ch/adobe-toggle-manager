@@ -24,7 +24,9 @@ teardown() { [[ -n "${TMPDIR_AL:-}" && -d "$TMPDIR_AL" ]] && rm -rf "$TMPDIR_AL"
     run env ATM_APP_DIR="$APPDIR" /bin/zsh -c "source '$TMPDIR_AL/installer.sh' >/dev/null 2>&1; phase_applauncher"
     [ "$status" -eq 0 ]
     run /usr/bin/osadecompile "$APPDIR/Adobe Toggle.app"
-    [[ "$output" == *"adobe-toggle"* && "$output" == *"Terminal"* && "$output" == *"close"* ]]
+    # opens the TUI in Terminal; must NOT use exec (exec breaks Terminal busy
+    # tracking → the window misbehaved). A usable window on quit is the contract.
+    [[ "$output" == *"adobe-toggle"* && "$output" == *"Terminal"* && "$output" != *"exec "* ]]
 }
 
 @test "phase_applauncher is idempotent (re-run replaces, still exit 0)" {

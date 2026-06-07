@@ -1,6 +1,6 @@
 #!/bin/zsh
 # === Adobe Toggle — Installer ===
-# Version: 1.0.0 (see CHANGELOG.md; phases: preflight -> appsupport -> copy_scripts -> plist -> bootstrap -> verify -> applauncher)
+# Version: 1.1.0 (see CHANGELOG.md; phases: preflight -> appsupport -> copy_scripts -> plist -> bootstrap -> verify -> applauncher)
 # 7 phases: preflight → appsupport → copy_scripts → plist → bootstrap → verify → applauncher
 # Rollback on failure in any phase (preflight is read-only, no mutation).
 #
@@ -465,20 +465,17 @@ phase_applauncher() {
         print -u2 -- "  ⚠ osacompile not found — app launcher skipped (use the CLI: $CORE_DST)"
         return 0
     fi
-    # AppleScript: open Terminal, exec the deployed TUI, and CLOSE the window once
-    # the TUI quits (Terminal does not close on shell exit by default; with exec
-    # the window would otherwise sit dead at "[Process completed]"). We hold the
-    # tab reference, wait via `busy`, then close with `saving no` (an idle login
-    # shell alone triggers no "terminate processes?" prompt). Single-quote the
-    # path so the space in "Application Support" is safe in the shell command.
+    # AppleScript: open a Terminal window and run the deployed TUI. NOT via exec —
+    # exec replaces the login shell, which breaks Terminal's `busy` tracking (an
+    # auto-close then fired before the TUI was even visible). Plain `do script`
+    # runs the TUI as a shell child; when you quit (q) the shell returns to a
+    # usable prompt in that window (no dead "[Process completed]"). Auto-closing
+    # the window is intentionally NOT done — Terminal's tab→window automation is
+    # unreliable; a usable window is the robust behaviour. Single-quote the path
+    # so the space in "Application Support" is safe in the shell command.
     local script="tell application \"Terminal\"
     activate
-    set _tab to do script \"clear; exec '${CORE_DST}'\"
-    delay 0.5
-    repeat while busy of _tab
-        delay 0.5
-    end repeat
-    close (first window whose tabs contains _tab) saving no
+    do script \"clear; '${CORE_DST}'\"
 end tell"
     /bin/rm -rf "$app_dir" 2>/dev/null
     if ! print -r -- "$script" | /usr/bin/osacompile -o "$app_dir" 2>/dev/null; then
@@ -520,7 +517,7 @@ rollback() {
 }
 
 main() {
-    print "Adobe Toggle v4 Installer"
+    print "Adobe Toggle Installer (v$APP_VERSION)"
     print "Source:        $CORE_SRC"
     print "App-Support:   $APP_SUPPORT"
     print "LaunchAgent:   $PLIST_PATH"
