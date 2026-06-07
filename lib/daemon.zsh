@@ -176,10 +176,12 @@ _daemon_resolve_interval() {
     print -- "$interval"
 }
 
-# _daemon_run_action — discovery + block_action OR allow_action depending on state.
+# _daemon_run_action — discovery + block_action / lean_action / allow_action
+# depending on state. lean mirrors block (needs a fresh discovery sweep first).
 _daemon_run_action() {
     case "${1-}" in
         block) discovery_sweep; block_action ;;
+        lean)  discovery_sweep; lean_action ;;
         allow) allow_action ;;
         *) log_warn "daemon: unknown state '${1-}', skipping tick" ;;
     esac
@@ -256,6 +258,7 @@ daemon_main() {
             log_event STATE_CHANGE "${prev_state:-init}→${state}"
             case "$state" in
                 block) notify "Adobe Toggle" "🔴 Adobe blocked" ;;
+                lean)  notify "Adobe Toggle" "🟡 Adobe lean (bloat off)" ;;
                 allow) notify "Adobe Toggle" "🟢 Adobe allowed" ;;
             esac
             prev_state="$state"

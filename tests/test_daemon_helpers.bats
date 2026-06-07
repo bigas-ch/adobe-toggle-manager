@@ -98,6 +98,21 @@ teardown() { sandbox_teardown; }
     [[ "$output" == *"banana"* ]]
 }
 
+@test "lean (v1.1.0): _daemon_run_action 'lean' calls discovery_sweep + lean_action only" {
+    run zsh -c "
+        source '$SCRIPT' >/dev/null 2>&1
+        typeset -gi _called_sweep=0 _called_lean=0 _called_block=0 _called_allow=0
+        discovery_sweep() { _called_sweep=1; }
+        lean_action()  { _called_lean=1; }
+        block_action() { _called_block=1; }
+        allow_action() { _called_allow=1; }
+        _daemon_run_action lean
+        echo \"sweep=\$_called_sweep lean=\$_called_lean block=\$_called_block allow=\$_called_allow\"
+    "
+    # combined final assertion (bats only checks the LAST command)
+    [[ "$output" == *"sweep=1"* && "$output" == *"lean=1"* && "$output" == *"block=0"* && "$output" == *"allow=0"* ]]
+}
+
 # === _daemon_periodic_maintenance =============================================
 
 @test "PD-01: _daemon_periodic_maintenance calls cache_save at tick%10==0" {
