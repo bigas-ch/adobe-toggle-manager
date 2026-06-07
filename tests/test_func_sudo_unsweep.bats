@@ -315,7 +315,8 @@ EOF
     printf 'pending_system=4\n' > "$ATM_BASE/live_state"
     run zsh -c "source '$SCRIPT' >/dev/null 2>&1; _status_lines_for_box 56"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Pending:"* ]]
-    [[ "$output" == *"4 system-Items"* ]]
-    [[ "$output" == *"[e]"* ]]
+    # Combined final assertion: bats only checks the LAST command, so the three
+    # checks must be one expression (previously the 'system items' check was a
+    # non-last command and silently ignored — and asserted the wrong 'system-Items').
+    [[ "$output" == *"Pending:"* && "$output" == *"4 system items"* && "$output" == *"[e]"* ]]
 }
